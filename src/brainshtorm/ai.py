@@ -119,6 +119,11 @@ def build_ai_prompt(assessment: NicheAssessment) -> str:
             f"serp_delta: {serp.score_delta}",
             f"serp_summary: {serp.summary}",
             f"top_domains: {', '.join(serp.top_domains) or 'n/a'}",
+            f"offer_gap: {serp.offer_gap_score}",
+            f"offer_signals: {', '.join(serp.offer_signals) or 'n/a'}",
+            f"missing_offer_signals: {', '.join(serp.missing_offer_signals) or 'n/a'}",
+            f"competitor_types: {', '.join(serp.competitor_types) or 'n/a'}",
+            f"serp_weak_spots: {'; '.join(serp.weak_spots) or 'n/a'}",
         ]
     cluster_lines = ["keyword_clusters: нет данных"]
     if assessment.keyword_clusters:
@@ -132,6 +137,9 @@ def build_ai_prompt(assessment: NicheAssessment) -> str:
                     f"demand={cluster.total_demand}; "
                     f"serp_difficulty={cluster_serp.estimated_difficulty}/10; "
                     f"serp_delta={cluster_serp.score_delta}; "
+                    f"offer_gap={cluster_serp.offer_gap_score}; "
+                    f"offer_signals={', '.join(cluster_serp.offer_signals) or 'n/a'}; "
+                    f"weak_spots={'; '.join(cluster_serp.weak_spots) or 'n/a'}; "
                     f"top_domains={', '.join(cluster_serp.top_domains) or 'n/a'}"
                 )
             else:

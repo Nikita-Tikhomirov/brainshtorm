@@ -1,14 +1,14 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 import html
 import json
 import urllib.error
 import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
-from dataclasses import replace
-import hashlib
+from dataclasses import dataclass, replace
 from typing import Any, Callable
 
 from brainshtorm.keywords import summarize_cluster_serp
@@ -38,6 +38,49 @@ MARKETPLACE_DOMAINS = {
     "ozon.ru",
     "wildberries.ru",
 }
+
+
+OFFER_SIGNAL_GROUPS = {
+    "цена": ("цен", "стоимость", "прайс", "руб", "₽"),
+    "гарантия": ("гарант", "официальн"),
+    "скорость": ("срочно", "быстро", "сегодня", "за 1 день", "24 час"),
+    "доставка": ("доставка", "самовывоз", "курьер"),
+    "отзывы": ("отзыв", "рейтинг", "оценк"),
+    "наличие": ("в наличии", "каталог", "выбор"),
+    "сервис": ("выезд", "мастер", "диагностик", "ремонт", "сервис"),
+    "действие": ("заказать", "купить", "заявк", "консультац", "расчет"),
+}
+
+INFO_INTENT_TERMS = (
+    "как ",
+    "что такое",
+    "инструкция",
+    "форум",
+    "отзывы",
+    "обзор",
+    "блог",
+    "статья",
+)
+
+LOCAL_SERVICE_TERMS = (
+    "ремонт",
+    "сервис",
+    "мастер",
+    "выезд",
+    "диагностик",
+    "студия",
+    "центр",
+)
+
+
+@dataclass(frozen=True)
+class _OfferAnalysis:
+    offer_signal_score: float
+    offer_gap_score: float
+    competitor_types: list[str]
+    offer_signals: list[str]
+    missing_offer_signals: list[str]
+    weak_spots: list[str]
 
 
 class YandexSerpError(RuntimeError):
@@ -188,13 +231,29 @@ def analyze_serp_results(
     aggregator_share = aggregator_count / total
     marketplace_share = marketplace_count / total
     top_domains = _unique_domains(results, limit=5)
+    offer_analysis = _analyze_offer_layer(
+        query=query,
+        results=results,
+        aggregator_count=aggregator_count,
+        marketplace_count=marketplace_count,
+    )
 
     competitor_score = round(
-        max(0.1, min(0.95, 0.25 + aggregator_share * 0.55 + marketplace_share * 0.2)),
+        max(
+            0.1,
+            min(
+                0.95,
+                0.25
+                + aggregator_share * 0.55
+                + marketplace_share * 0.2
+                + offer_analysis.offer_signal_score * 0.1
+                - offer_analysis.offer_gap_score * 0.06,
+            ),
+        ),
         2,
     )
     estimated_difficulty = max(1, min(10, round(1 + competitor_score * 9)))
-    score_delta = round((0.4 - competitor_score) * 30, 1)
+    score_delta = round((0.4 - competitor_score) * 30 + (offer_analysis.offer_gap_score - 0.45) * 6, 1)
     if estimated_difficulty > max_difficulty:
         score_delta -= min(8, (estimated_difficulty - max_difficulty) * 2)
 
@@ -208,7 +267,13 @@ def analyze_serp_results(
         competitor_score=competitor_score,
         estimated_difficulty=estimated_difficulty,
         score_delta=round(score_delta, 1),
-        summary=_serp_summary(aggregator_count, marketplace_count, estimated_difficulty),
+        summary=_serp_summary(aggregator_count, marketplace_count, estimated_difficulty, offer_analysis),
+        offer_signal_score=offer_analysis.offer_signal_score,
+        offer_gap_score=offer_analysis.offer_gap_score,
+        competitor_types=offer_analysis.competitor_types,
+        offer_signals=offer_analysis.offer_signals,
+        missing_offer_signals=offer_analysis.missing_offer_signals,
+        weak_spots=offer_analysis.weak_spots,
     )
 
 
@@ -350,12 +415,159 @@ def _unique_domains(results: list[SerpResult], *, limit: int) -> list[str]:
     return domains
 
 
-def _serp_summary(aggregator_count: int, marketplace_count: int, difficulty: int) -> str:
+def _analyze_offer_layer(
+    *,
+    query: str,
+    results: list[SerpResult],
+    aggregator_count: int,
+    marketplace_count: int,
+) -> _OfferAnalysis:
+    if not results:
+        return _OfferAnalysis(
+            offer_signal_score=0.0,
+            offer_gap_score=0.0,
+            competitor_types=[],
+            offer_signals=[],
+            missing_offer_signals=list(OFFER_SIGNAL_GROUPS),
+            weak_spots=["Нет результатов SERP для автоматического разбора офферов."],
+        )
+
+    total = len(results)
+    query_tokens = _important_tokens(query)
+    result_texts = [_result_text(result) for result in results]
+    present_signals = [
+        label
+        for label, terms in OFFER_SIGNAL_GROUPS.items()
+        if any(_has_any_term(text, terms) for text in result_texts)
+    ]
+    signal_result_share = sum(1 for text in result_texts if _has_any_offer_signal(text)) / total
+    signal_coverage = len(present_signals) / max(1, len(OFFER_SIGNAL_GROUPS))
+    offer_signal_score = round(min(1.0, signal_coverage * 0.65 + signal_result_share * 0.35), 2)
+
+    exact_match_share = _exact_match_share(query, query_tokens, result_texts)
+    info_count = sum(1 for text in result_texts if _has_any_term(text, INFO_INTENT_TERMS))
+    competitor_types = _competitor_types(results, result_texts)
+    missing_signals = [label for label in OFFER_SIGNAL_GROUPS if label not in present_signals]
+
+    middleman_share = min(1.0, (aggregator_count + marketplace_count) / total)
+    info_share = info_count / total
+    offer_gap_score = round(
+        _clamp_float(
+            (1 - offer_signal_score) * 0.35
+            + (1 - exact_match_share) * 0.25
+            + middleman_share * 0.25
+            + info_share * 0.15,
+            0.0,
+            1.0,
+        ),
+        2,
+    )
+    weak_spots = _offer_weak_spots(
+        offer_signal_score=offer_signal_score,
+        exact_match_share=exact_match_share,
+        aggregator_count=aggregator_count,
+        marketplace_count=marketplace_count,
+        info_count=info_count,
+        total=total,
+        missing_signals=missing_signals,
+    )
+    return _OfferAnalysis(
+        offer_signal_score=offer_signal_score,
+        offer_gap_score=offer_gap_score,
+        competitor_types=competitor_types,
+        offer_signals=present_signals,
+        missing_offer_signals=missing_signals[:4],
+        weak_spots=weak_spots,
+    )
+
+
+def _result_text(result: SerpResult) -> str:
+    return f"{result.title} {result.snippet} {result.url}".lower()
+
+
+def _important_tokens(value: str) -> list[str]:
+    normalized = "".join(char if char.isalnum() else " " for char in value.lower())
+    return [token for token in normalized.split() if len(token) >= 4]
+
+
+def _has_any_term(text: str, terms: tuple[str, ...]) -> bool:
+    return any(term in text for term in terms)
+
+
+def _has_any_offer_signal(text: str) -> bool:
+    return any(_has_any_term(text, terms) for terms in OFFER_SIGNAL_GROUPS.values())
+
+
+def _exact_match_share(query: str, query_tokens: list[str], result_texts: list[str]) -> float:
+    normalized_query = " ".join(query.lower().split())
+    if not query_tokens:
+        return 0.0
+    exact_matches = 0
+    for text in result_texts:
+        if normalized_query in text or all(token in text for token in query_tokens):
+            exact_matches += 1
+    return round(exact_matches / max(1, len(result_texts)), 2)
+
+
+def _competitor_types(results: list[SerpResult], result_texts: list[str]) -> list[str]:
+    counts: dict[str, int] = {}
+    for result, text in zip(results, result_texts):
+        if _is_known_domain(result.domain, AGGREGATOR_DOMAINS):
+            label = "агрегаторы"
+        elif _is_known_domain(result.domain, MARKETPLACE_DOMAINS):
+            label = "маркетплейсы"
+        elif _has_any_term(text, INFO_INTENT_TERMS):
+            label = "информационные страницы"
+        elif _has_any_term(text, LOCAL_SERVICE_TERMS):
+            label = "сервисные сайты"
+        else:
+            label = "нишевые сайты"
+        counts[label] = counts.get(label, 0) + 1
+
+    return [
+        f"{label}: {count}"
+        for label, count in sorted(counts.items(), key=lambda item: item[1], reverse=True)
+    ]
+
+
+def _offer_weak_spots(
+    *,
+    offer_signal_score: float,
+    exact_match_share: float,
+    aggregator_count: int,
+    marketplace_count: int,
+    info_count: int,
+    total: int,
+    missing_signals: list[str],
+) -> list[str]:
+    weak_spots: list[str] = []
+    if aggregator_count / total >= 0.3:
+        weak_spots.append("В топе заметная доля агрегаторов, можно конкурировать более точной посадочной страницей.")
+    if marketplace_count / total >= 0.3:
+        weak_spots.append("В топе заметная доля маркетплейсов, нужен узкий ассортимент или экспертная витрина.")
+    if offer_signal_score < 0.45 and missing_signals:
+        weak_spots.append("В сниппетах мало явных офферов: " + ", ".join(missing_signals[:4]) + ".")
+    if exact_match_share < 0.45:
+        weak_spots.append("Мало страниц с точным совпадением запроса в title/snippet.")
+    if info_count / total >= 0.25:
+        weak_spots.append("В топе есть информационные страницы, коммерческая посадочная может закрыть интент точнее.")
+    if not weak_spots:
+        weak_spots.append("Явных слабых мест по офферу в сниппетах не найдено.")
+    return weak_spots
+
+
+def _serp_summary(
+    aggregator_count: int,
+    marketplace_count: int,
+    difficulty: int,
+    offer_analysis: _OfferAnalysis,
+) -> str:
     parts = [f"оценочная сложность выдачи {difficulty}/10"]
     if aggregator_count:
         parts.append(f"агрегаторов в топе: {aggregator_count}")
     if marketplace_count:
         parts.append(f"маркетплейсов в топе: {marketplace_count}")
+    parts.append(f"offer gap: {offer_analysis.offer_gap_score:.2f}")
     return "; ".join(parts) + "."
 
 

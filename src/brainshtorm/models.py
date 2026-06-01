@@ -48,6 +48,12 @@ class SerpAnalysis:
     estimated_difficulty: int
     score_delta: float
     summary: str
+    offer_signal_score: float = 0.0
+    offer_gap_score: float = 0.0
+    competitor_types: list[str] = field(default_factory=list)
+    offer_signals: list[str] = field(default_factory=list)
+    missing_offer_signals: list[str] = field(default_factory=list)
+    weak_spots: list[str] = field(default_factory=list)
 
 
 @dataclass(frozen=True)

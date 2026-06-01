@@ -1,6 +1,15 @@
 import base64
 
-from brainshtorm.models import DirectionInput, KeywordCandidate, KeywordCluster, MarketMetrics, NicheAssessment, REVIEW, TAKE
+from brainshtorm.models import (
+    DirectionInput,
+    KeywordCandidate,
+    KeywordCluster,
+    MarketMetrics,
+    NicheAssessment,
+    REVIEW,
+    SerpResult,
+    TAKE,
+)
 from brainshtorm.serp import (
     YandexSerpClient,
     analyze_serp_results,
@@ -81,6 +90,51 @@ def test_analyze_serp_results_scores_aggregator_heavy_serp_as_harder():
     assert analysis.estimated_difficulty >= 5
     assert analysis.score_delta < 0
     assert "profi.ru" in analysis.top_domains
+
+
+def test_analyze_serp_results_extracts_offer_gap_and_competitor_types():
+    results = parse_yandex_xml_results(SERP_XML)
+
+    analysis = analyze_serp_results(
+        query="ремонт роботов пылесосов",
+        results=results,
+        max_difficulty=6,
+    )
+
+    assert analysis.offer_signal_score > 0
+    assert analysis.offer_gap_score > 0
+    assert "цена" in analysis.offer_signals
+    assert "гарантия" in analysis.offer_signals
+    assert any("агрегаторы" in item for item in analysis.competitor_types)
+    assert analysis.weak_spots
+    assert "offer gap" in analysis.summary
+
+
+def test_analyze_serp_results_marks_weak_offer_serp_as_opportunity_gap():
+    results = [
+        SerpResult(
+            title="Форум владельцев роботов-пылесосов",
+            url="https://forum.example/topic",
+            domain="forum.example",
+            snippet="Как выбрать и обслуживать устройство дома.",
+        ),
+        SerpResult(
+            title="Обзор моделей",
+            url="https://blog.example/review",
+            domain="blog.example",
+            snippet="Статья без цен, гарантии и формы заказа.",
+        ),
+    ]
+
+    analysis = analyze_serp_results(
+        query="ремонт роботов пылесосов xiaomi цена",
+        results=results,
+        max_difficulty=6,
+    )
+
+    assert analysis.offer_gap_score >= 0.5
+    assert any("Мало страниц" in spot for spot in analysis.weak_spots)
+    assert any("информационные" in item for item in analysis.competitor_types)
 
 
 def test_apply_serp_analysis_adjusts_assessment_verdict_and_risks():

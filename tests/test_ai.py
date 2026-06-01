@@ -72,7 +72,13 @@ def make_assessment() -> NicheAssessment:
             competitor_score=0.8,
             estimated_difficulty=8,
             score_delta=-7.0,
-            summary="оценочная сложность выдачи 8/10; агрегаторов в топе: 1.",
+            summary="оценочная сложность выдачи 8/10; агрегаторов в топе: 1; offer gap: 0.55.",
+            offer_signal_score=0.3,
+            offer_gap_score=0.55,
+            competitor_types=["агрегаторы: 1"],
+            offer_signals=["цена"],
+            missing_offer_signals=["гарантия"],
+            weak_spots=["В топе заметная доля агрегаторов."],
         ),
     )
 
@@ -87,6 +93,8 @@ def test_build_ai_prompt_contains_metrics_serp_and_output_contract():
     assert "Вердикт" in prompt
     assert "launch_recommendation" in prompt
     assert "Лидогенератор ремонта роботов пылесосов" in prompt
+    assert "offer_gap: 0.55" in prompt
+    assert "missing_offer_signals: гарантия" in prompt
 
 
 def test_openai_client_posts_responses_request_and_returns_output_text():

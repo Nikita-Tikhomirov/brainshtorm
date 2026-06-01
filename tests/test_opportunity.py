@@ -60,7 +60,13 @@ def make_assessment() -> NicheAssessment:
                     competitor_score=0.35,
                     estimated_difficulty=4,
                     score_delta=3.0,
-                    summary="оценочная сложность выдачи 4/10.",
+                    summary="оценочная сложность выдачи 4/10; offer gap: 0.62.",
+                    offer_signal_score=0.25,
+                    offer_gap_score=0.62,
+                    competitor_types=["агрегаторы: 1", "сервисные сайты: 1"],
+                    offer_signals=["цена"],
+                    missing_offer_signals=["гарантия", "скорость"],
+                    weak_spots=["В сниппетах мало явных офферов: гарантия, скорость."],
                 ),
             ),
             KeywordCluster(
@@ -93,6 +99,8 @@ def test_build_product_recommendation_returns_actionable_launch_card():
     assert "ремонт роботов пылесосов" in recommendation.product_title
     assert recommendation.launch_type == "Лидогенератор услуги"
     assert "ремонт робота пылесоса цена" in recommendation.landing_pages[0]
+    assert "гарантия" in recommendation.offer
+    assert any("Offer gap SERP" in item for item in recommendation.evidence)
     assert "ручн" not in " ".join(recommendation.evidence + recommendation.risks).lower()
     assert recommendation.first_test
 

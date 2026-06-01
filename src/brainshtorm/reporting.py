@@ -76,10 +76,17 @@ def render_markdown_report(assessments: list[NicheAssessment]) -> str:
                     "",
                     f"- SERP difficulty: {serp.estimated_difficulty}/10",
                     f"- SERP score delta: `{serp.score_delta:.1f}`",
+                    f"- Offer gap: `{serp.offer_gap_score:.2f}`",
+                    f"- Offer signals: {', '.join(serp.offer_signals) or 'n/a'}",
+                    f"- Missing offer signals: {', '.join(serp.missing_offer_signals) or 'n/a'}",
+                    f"- Competitor types: {', '.join(serp.competitor_types) or 'n/a'}",
                     f"- SERP summary: {serp.summary}",
                     f"- Top domains: {', '.join(serp.top_domains) or 'n/a'}",
                 ]
             )
+            if serp.weak_spots:
+                lines.extend(["", "SERP weak spots:", ""])
+                lines.extend(f"- {spot}" for spot in serp.weak_spots)
         if assessment.keyword_clusters:
             lines.extend(["", "Keyword clusters:", ""])
             for cluster in assessment.keyword_clusters:
@@ -91,6 +98,7 @@ def render_markdown_report(assessments: list[NicheAssessment]) -> str:
                         f"demand {cluster.total_demand}; "
                         f"difficulty {serp.estimated_difficulty}/10; "
                         f"delta `{serp.score_delta}`; "
+                        f"offer gap `{serp.offer_gap_score:.2f}`; "
                         f"top {', '.join(serp.top_domains) or 'n/a'}"
                     )
                 else:

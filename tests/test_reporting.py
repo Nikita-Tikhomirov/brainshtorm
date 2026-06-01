@@ -68,7 +68,13 @@ def make_assessment_with_serp() -> NicheAssessment:
             competitor_score=0.8,
             estimated_difficulty=8,
             score_delta=-8.4,
-            summary="оценочная сложность выдачи 8/10; агрегаторов в топе: 1.",
+            summary="оценочная сложность выдачи 8/10; агрегаторов в топе: 1; offer gap: 0.55.",
+            offer_signal_score=0.3,
+            offer_gap_score=0.55,
+            competitor_types=["агрегаторы: 1"],
+            offer_signals=["цена"],
+            missing_offer_signals=["гарантия", "скорость"],
+            weak_spots=["В топе заметная доля агрегаторов, можно конкурировать более точной посадочной страницей."],
         ),
     )
 
@@ -124,7 +130,8 @@ def make_assessment_with_keyword_clusters() -> NicheAssessment:
                     competitor_score=0.8,
                     estimated_difficulty=8,
                     score_delta=-7.0,
-                    summary="оценочная сложность выдачи 8/10.",
+                    summary="оценочная сложность выдачи 8/10; offer gap: 0.50.",
+                    offer_gap_score=0.5,
                 ),
             )
         ],
@@ -173,6 +180,8 @@ def test_markdown_report_contains_serp_details_when_available():
     assert "SERP analysis" in report
     assert "profi.ru" in report
     assert "SERP score delta: `-8.4`" in report
+    assert "Offer gap: `0.55`" in report
+    assert "SERP weak spots" in report
 
 
 def test_markdown_report_contains_ai_insight_when_available():
@@ -189,6 +198,7 @@ def test_markdown_report_contains_keyword_clusters_when_available():
     assert "ремонт/сервис" in report
     assert "ремонт роботов пылесосов xiaomi" in report
     assert "difficulty 8/10" in report
+    assert "offer gap `0.50`" in report
 
 
 def test_markdown_report_contains_product_recommendation_when_available():

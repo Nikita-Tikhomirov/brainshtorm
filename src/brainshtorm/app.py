@@ -516,6 +516,8 @@ def _assessment_row(assessment: NicheAssessment) -> dict[str, object]:
         "difficulty": assessment.metrics.estimated_difficulty,
         "serp_difficulty": serp.estimated_difficulty if serp else "",
         "serp_delta": serp.score_delta if serp else "",
+        "offer_gap": serp.offer_gap_score if serp else "",
+        "serp_weak_spots": _short_text("; ".join(serp.weak_spots) if serp else ""),
         "top_domains": ", ".join(serp.top_domains) if serp else "",
         "keyword_clusters": _cluster_summary(assessment),
         "ai_insight": _short_text(assessment.ai_insight),
@@ -564,7 +566,7 @@ def _cluster_summary(assessment: NicheAssessment) -> str:
     for cluster in assessment.keyword_clusters:
         serp = cluster.serp_analysis
         if serp:
-            parts.append(f"{cluster.name}: {serp.estimated_difficulty}/10")
+            parts.append(f"{cluster.name}: {serp.estimated_difficulty}/10, gap {serp.offer_gap_score:.2f}")
         else:
             parts.append(cluster.name)
     return "; ".join(parts)
