@@ -5,7 +5,7 @@ import io
 
 import streamlit as st
 
-from brainshtorm.ai import OllamaClient, OllamaError, apply_ai_insight, generate_ai_insight
+from brainshtorm.ai import AiError, DeepSeekClient, OpenAiClient, apply_ai_insight, generate_ai_insight
 from brainshtorm.app_inputs import parse_pasted_directions
 from brainshtorm.models import NicheAssessment
 from brainshtorm.providers import DemoMarketDataProvider
@@ -44,6 +44,8 @@ PROJECT_TYPES = {
     "Инфопродукт": "infoproduct",
     "Маркетплейс/каталог": "marketplace",
 }
+
+AI_PROVIDERS = ["GPT", "DeepSeek"]
 
 
 APP_STYLE = """
@@ -138,14 +140,35 @@ def run_app() -> None:
             "Генерировать AI-вердикт финалистов",
             value=settings.enable_ai,
         )
-        ai_model = st.text_input("Ollama модель", value=settings.ai_model)
+        ai_provider = st.selectbox(
+            "AI-провайдер",
+            AI_PROVIDERS,
+            index=_option_index(AI_PROVIDERS, settings.ai_provider),
+        )
+        if ai_provider == "GPT":
+            openai_api_key = st.text_input(
+                "OpenAI API key",
+                value=settings.openai_api_key,
+                type="password",
+            )
+            deepseek_api_key = settings.deepseek_api_key
+            openai_model = st.text_input("GPT модель", value=settings.openai_model)
+            deepseek_model = settings.deepseek_model
+        else:
+            deepseek_api_key = st.text_input(
+                "DeepSeek API key",
+                value=settings.deepseek_api_key,
+                type="password",
+            )
+            openai_api_key = settings.openai_api_key
+            deepseek_model = st.text_input("DeepSeek модель", value=settings.deepseek_model)
+            openai_model = settings.openai_model
         ai_finalists = st.slider(
             "Финалистов для AI",
             1,
             20,
             _clamp(settings.ai_finalists, 1, 20),
         )
-        ollama_base_url = st.text_input("Ollama URL", value=settings.ollama_base_url)
 
     pasted = st.text_area(
         "Список направлений, по одному на строку",
@@ -168,9 +191,12 @@ def run_app() -> None:
         serp_finalists=int(serp_finalists),
         serp_results=int(serp_results),
         enable_ai=enable_ai,
-        ai_model=ai_model,
+        ai_provider=ai_provider,
+        openai_api_key=openai_api_key,
+        deepseek_api_key=deepseek_api_key,
+        openai_model=openai_model,
+        deepseek_model=deepseek_model,
         ai_finalists=int(ai_finalists),
-        ollama_base_url=ollama_base_url,
         pasted_directions=pasted,
     )
 
@@ -209,12 +235,15 @@ def run_app() -> None:
             serp_finalists=int(serp_finalists),
             serp_results=int(serp_results),
             enable_ai=enable_ai,
-            ai_model=ai_model,
+            ai_provider=ai_provider,
+            openai_api_key=openai_api_key,
+            deepseek_api_key=deepseek_api_key,
+            openai_model=openai_model,
+            deepseek_model=deepseek_model,
             ai_finalists=int(ai_finalists),
-            ollama_base_url=ollama_base_url,
             directions=directions,
         )
-    except (ValueError, YandexWordstatError, YandexSerpError, OllamaError) as exc:
+    except (ValueError, YandexWordstatError, YandexSerpError, AiError) as exc:
         st.error(str(exc))
         return
 
@@ -233,9 +262,12 @@ def _run_analysis(
     serp_finalists: int,
     serp_results: int,
     enable_ai: bool,
-    ai_model: str,
+    ai_provider: str,
+    openai_api_key: str,
+    deepseek_api_key: str,
+    openai_model: str,
+    deepseek_model: str,
     ai_finalists: int,
-    ollama_base_url: str,
     directions,
 ) -> list[NicheAssessment]:
     if provider_name == "Demo":
@@ -269,9 +301,12 @@ def _run_analysis(
     if enable_ai:
         ranked = _apply_ai_to_finalists(
             ranked,
-            model=ai_model,
+            provider=ai_provider,
+            openai_api_key=openai_api_key,
+            deepseek_api_key=deepseek_api_key,
+            openai_model=openai_model,
+            deepseek_model=deepseek_model,
             finalists=ai_finalists,
-            base_url=ollama_base_url,
         )
 
     return ranked
@@ -308,11 +343,20 @@ def _apply_serp_to_finalists(
 def _apply_ai_to_finalists(
     assessments: list[NicheAssessment],
     *,
-    model: str,
+    provider: str,
+    openai_api_key: str,
+    deepseek_api_key: str,
+    openai_model: str,
+    deepseek_model: str,
     finalists: int,
-    base_url: str,
 ) -> list[NicheAssessment]:
-    client = OllamaClient(model=model, base_url=base_url)
+    client = _build_ai_client(
+        provider=provider,
+        openai_api_key=openai_api_key,
+        deepseek_api_key=deepseek_api_key,
+        openai_model=openai_model,
+        deepseek_model=deepseek_model,
+    )
     finalist_count = min(max(1, finalists), len(assessments))
     ai_progress = st.progress(0)
     adjusted = list(assessments)
@@ -322,6 +366,21 @@ def _apply_ai_to_finalists(
         ai_progress.progress(index / finalist_count)
 
     return adjusted
+
+
+def _build_ai_client(
+    *,
+    provider: str,
+    openai_api_key: str,
+    deepseek_api_key: str,
+    openai_model: str,
+    deepseek_model: str,
+):
+    if provider == "GPT":
+        return OpenAiClient(api_key=openai_api_key, model=openai_model)
+    if provider == "DeepSeek":
+        return DeepSeekClient(api_key=deepseek_api_key, model=deepseek_model)
+    raise ValueError(f"Неподдерживаемый AI-провайдер: {provider}")
 
 
 def _build_serp_provider(

@@ -1,5 +1,6 @@
 from brainshtorm.ai import (
-    OllamaClient,
+    DeepSeekClient,
+    OpenAiClient,
     apply_ai_insight,
     build_ai_prompt,
     generate_ai_insight,
@@ -72,26 +73,53 @@ def test_build_ai_prompt_contains_metrics_serp_and_output_contract():
     assert "Вердикт" in prompt
 
 
-def test_ollama_client_posts_generate_request_and_returns_text():
+def test_openai_client_posts_responses_request_and_returns_output_text():
     calls = []
 
-    def transport(url, body, timeout):
-        calls.append((url, body, timeout))
-        return {"response": "Запускать как лидогенератор."}
+    def transport(url, body, headers, timeout):
+        calls.append((url, body, headers, timeout))
+        return {"output_text": "Вердикт: брать в тест."}
 
-    client = OllamaClient(
-        base_url="http://127.0.0.1:11434",
-        model="qwen3:8b",
+    client = OpenAiClient(
+        api_key="openai-secret",
+        model="gpt-5.5",
         transport=transport,
     )
 
     result = client.generate("prompt")
 
-    assert result == "Запускать как лидогенератор."
-    assert calls[0][0] == "http://127.0.0.1:11434/api/generate"
-    assert calls[0][1]["model"] == "qwen3:8b"
-    assert calls[0][1]["prompt"] == "prompt"
-    assert calls[0][1]["stream"] is False
+    assert result == "Вердикт: брать в тест."
+    assert calls[0][0] == "https://api.openai.com/v1/responses"
+    assert calls[0][1]["model"] == "gpt-5.5"
+    assert calls[0][1]["input"] == "prompt"
+    assert calls[0][2]["Authorization"] == "Bearer openai-secret"
+
+
+def test_deepseek_client_posts_chat_completion_request_and_returns_message():
+    calls = []
+
+    def transport(url, body, headers, timeout):
+        calls.append((url, body, headers, timeout))
+        return {
+            "choices": [
+                {"message": {"content": "Продукт: каталог подрядчиков."}},
+            ],
+        }
+
+    client = DeepSeekClient(
+        api_key="deepseek-secret",
+        model="deepseek-v4-pro",
+        transport=transport,
+    )
+
+    result = client.generate("prompt")
+
+    assert result == "Продукт: каталог подрядчиков."
+    assert calls[0][0] == "https://api.deepseek.com/chat/completions"
+    assert calls[0][1]["model"] == "deepseek-v4-pro"
+    assert calls[0][1]["messages"][1]["content"] == "prompt"
+    assert calls[0][1]["thinking"] == {"type": "enabled"}
+    assert calls[0][2]["Authorization"] == "Bearer deepseek-secret"
 
 
 def test_generate_ai_insight_uses_assessment_prompt():

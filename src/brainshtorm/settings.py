@@ -29,9 +29,12 @@ class AppSettings:
     serp_finalists: int = 10
     serp_results: int = 10
     enable_ai: bool = False
-    ai_model: str = "qwen3:8b"
+    ai_provider: str = "GPT"
+    openai_api_key: str = ""
+    deepseek_api_key: str = ""
+    openai_model: str = "gpt-5.5"
+    deepseek_model: str = "deepseek-v4-pro"
     ai_finalists: int = 5
-    ollama_base_url: str = "http://127.0.0.1:11434"
     pasted_directions: str = ""
 
 
@@ -73,9 +76,12 @@ def load_settings(
         serp_finalists=_as_int(payload.get("serp_finalists"), defaults.serp_finalists),
         serp_results=_as_int(payload.get("serp_results"), defaults.serp_results),
         enable_ai=_as_bool(payload.get("enable_ai"), defaults.enable_ai),
-        ai_model=_as_str(payload.get("ai_model"), defaults.ai_model),
+        ai_provider=_as_str(payload.get("ai_provider"), defaults.ai_provider),
+        openai_api_key=unprotect(_as_str(payload.get("openai_api_key"), "")),
+        deepseek_api_key=unprotect(_as_str(payload.get("deepseek_api_key"), "")),
+        openai_model=_as_str(payload.get("openai_model"), defaults.openai_model),
+        deepseek_model=_as_str(payload.get("deepseek_model"), defaults.deepseek_model),
         ai_finalists=_as_int(payload.get("ai_finalists"), defaults.ai_finalists),
-        ollama_base_url=_as_str(payload.get("ollama_base_url"), defaults.ollama_base_url),
         pasted_directions=_as_str(payload.get("pasted_directions"), defaults.pasted_directions),
     )
 
@@ -91,6 +97,8 @@ def save_settings(
     payload = asdict(settings)
     payload["api_key"] = protect(settings.api_key)
     payload["folder_id"] = protect(settings.folder_id)
+    payload["openai_api_key"] = protect(settings.openai_api_key)
+    payload["deepseek_api_key"] = protect(settings.deepseek_api_key)
 
     settings_path.parent.mkdir(parents=True, exist_ok=True)
     settings_path.write_text(

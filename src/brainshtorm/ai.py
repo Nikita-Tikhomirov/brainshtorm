@@ -9,7 +9,12 @@ from typing import Any, Callable, Protocol
 from brainshtorm.models import NicheAssessment
 
 
-OllamaTransport = Callable[[str, dict[str, Any], int], dict[str, Any]]
+AiTransport = Callable[[str, dict[str, Any], dict[str, str], int], dict[str, Any]]
+
+AI_SYSTEM_INSTRUCTIONS = (
+    "Ты продуктовый SEO/leadgen-аналитик для Рунета. "
+    "Давай короткие практические выводы по запуску продукта, SEO и рискам."
+)
 
 
 class AiClient(Protocol):
@@ -17,43 +22,88 @@ class AiClient(Protocol):
         """Generate a text answer for one prompt."""
 
 
-class OllamaError(RuntimeError):
+class AiError(RuntimeError):
     pass
 
 
-class OllamaClient:
+class OpenAiClient:
     def __init__(
         self,
         *,
-        base_url: str = "http://127.0.0.1:11434",
-        model: str = "qwen3:8b",
-        timeout: int = 120,
-        transport: OllamaTransport | None = None,
+        api_key: str,
+        model: str = "gpt-5.5",
+        base_url: str = "https://api.openai.com/v1",
+        timeout: int = 180,
+        transport: AiTransport | None = None,
     ) -> None:
-        if not base_url.strip():
-            raise ValueError("Ollama URL is required")
+        if not api_key.strip():
+            raise ValueError("OpenAI API key is required")
         if not model.strip():
-            raise ValueError("Ollama model is required")
-        self.base_url = base_url.strip().rstrip("/")
+            raise ValueError("OpenAI model is required")
+        self.api_key = api_key.strip()
         self.model = model.strip()
+        self.base_url = base_url.strip().rstrip("/")
         self.timeout = timeout
         self.transport = transport or _urllib_transport
 
     def generate(self, prompt: str) -> str:
         body: dict[str, Any] = {
             "model": self.model,
-            "prompt": prompt,
-            "stream": False,
-            "options": {
-                "temperature": 0.2,
-                "num_ctx": 4096,
-            },
+            "instructions": AI_SYSTEM_INSTRUCTIONS,
+            "input": prompt,
+            "max_output_tokens": 900,
         }
-        response = self.transport(f"{self.base_url}/api/generate", body, self.timeout)
-        text = response.get("response")
-        if not isinstance(text, str) or not text.strip():
-            raise OllamaError("Ollama returned empty response")
-        return _clean_ai_text(text)
+        if _supports_openai_reasoning(self.model):
+            body["reasoning"] = {"effort": "medium"}
+
+        response = self.transport(
+            f"{self.base_url}/responses",
+            body,
+            {"Authorization": f"Bearer {self.api_key}"},
+            self.timeout,
+        )
+        return _extract_openai_text(response)
+
+
+class DeepSeekClient:
+    def __init__(
+        self,
+        *,
+        api_key: str,
+        model: str = "deepseek-v4-pro",
+        base_url: str = "https://api.deepseek.com",
+        timeout: int = 180,
+        transport: AiTransport | None = None,
+    ) -> None:
+        if not api_key.strip():
+            raise ValueError("DeepSeek API key is required")
+        if not model.strip():
+            raise ValueError("DeepSeek model is required")
+        self.api_key = api_key.strip()
+        self.model = model.strip()
+        self.base_url = base_url.strip().rstrip("/")
+        self.timeout = timeout
+        self.transport = transport or _urllib_transport
+
+    def generate(self, prompt: str) -> str:
+        body: dict[str, Any] = {
+            "model": self.model,
+            "messages": [
+                {"role": "system", "content": AI_SYSTEM_INSTRUCTIONS},
+                {"role": "user", "content": prompt},
+            ],
+            "thinking": {"type": "enabled"},
+            "reasoning_effort": "high",
+            "stream": False,
+            "max_tokens": 900,
+        }
+        response = self.transport(
+            f"{self.base_url}/chat/completions",
+            body,
+            {"Authorization": f"Bearer {self.api_key}"},
+            self.timeout,
+        )
+        return _extract_deepseek_text(response)
 
 
 def build_ai_prompt(assessment: NicheAssessment) -> str:
@@ -73,7 +123,6 @@ def build_ai_prompt(assessment: NicheAssessment) -> str:
 
     return "\n".join(
         [
-            "Ты продуктовый SEO/leadgen-аналитик для Рунета.",
             "Нужно дать короткий практический вердикт по нише на основе метрик.",
             "Ответь на русском, без воды, в таком формате:",
             "Вердикт: ...",
@@ -111,11 +160,17 @@ def apply_ai_insight(assessment: NicheAssessment, insight: str) -> NicheAssessme
     return replace(assessment, ai_insight=_clean_ai_text(insight))
 
 
-def _urllib_transport(url: str, body: dict[str, Any], timeout: int) -> dict[str, Any]:
+def _urllib_transport(
+    url: str,
+    body: dict[str, Any],
+    headers: dict[str, str],
+    timeout: int,
+) -> dict[str, Any]:
+    request_headers = {"Content-Type": "application/json", **headers}
     request = urllib.request.Request(
         url,
         data=json.dumps(body).encode("utf-8"),
-        headers={"Content-Type": "application/json"},
+        headers=request_headers,
         method="POST",
     )
     try:
@@ -123,9 +178,58 @@ def _urllib_transport(url: str, body: dict[str, Any], timeout: int) -> dict[str,
             return json.loads(response.read().decode("utf-8"))
     except urllib.error.HTTPError as exc:
         detail = exc.read().decode("utf-8", errors="replace")
-        raise OllamaError(f"Ollama HTTP {exc.code}: {detail}") from exc
+        raise AiError(f"AI provider HTTP {exc.code}: {detail}") from exc
     except urllib.error.URLError as exc:
-        raise OllamaError(f"Ollama request failed: {exc.reason}") from exc
+        raise AiError(f"AI provider request failed: {exc.reason}") from exc
+    except json.JSONDecodeError as exc:
+        raise AiError("AI provider returned invalid JSON") from exc
+
+
+def _extract_openai_text(response: dict[str, Any]) -> str:
+    direct_text = response.get("output_text")
+    if isinstance(direct_text, str) and direct_text.strip():
+        return _clean_ai_text(direct_text)
+
+    chunks: list[str] = []
+    output = response.get("output")
+    if isinstance(output, list):
+        for item in output:
+            if not isinstance(item, dict):
+                continue
+            content = item.get("content")
+            if not isinstance(content, list):
+                continue
+            for part in content:
+                if not isinstance(part, dict):
+                    continue
+                text = part.get("text")
+                if isinstance(text, str) and text.strip():
+                    chunks.append(text)
+
+    if chunks:
+        return _clean_ai_text("\n".join(chunks))
+    raise AiError("OpenAI returned empty response")
+
+
+def _extract_deepseek_text(response: dict[str, Any]) -> str:
+    choices = response.get("choices")
+    if not isinstance(choices, list) or not choices:
+        raise AiError("DeepSeek returned empty response")
+    first_choice = choices[0]
+    if not isinstance(first_choice, dict):
+        raise AiError("DeepSeek returned invalid response")
+    message = first_choice.get("message")
+    if not isinstance(message, dict):
+        raise AiError("DeepSeek returned invalid message")
+    text = message.get("content")
+    if not isinstance(text, str) or not text.strip():
+        raise AiError("DeepSeek returned empty message")
+    return _clean_ai_text(text)
+
+
+def _supports_openai_reasoning(model: str) -> bool:
+    normalized = model.lower()
+    return normalized.startswith("gpt-5") or normalized.startswith("o")
 
 
 def _clean_ai_text(text: str) -> str:

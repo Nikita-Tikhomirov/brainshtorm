@@ -32,9 +32,12 @@ def test_save_and_load_settings_roundtrip_with_protected_key(tmp_path):
         serp_finalists=12,
         serp_results=20,
         enable_ai=True,
-        ai_model="qwen3:8b",
+        ai_provider="DeepSeek",
+        openai_api_key="openai-secret",
+        deepseek_api_key="deepseek-secret",
+        openai_model="gpt-5.5",
+        deepseek_model="deepseek-v4-pro",
         ai_finalists=5,
-        ollama_base_url="http://127.0.0.1:11434",
         pasted_directions="ремонт\nкурсы",
     )
 
@@ -43,7 +46,11 @@ def test_save_and_load_settings_roundtrip_with_protected_key(tmp_path):
     raw_text = settings_path.read_text(encoding="utf-8")
     raw_payload = json.loads(raw_text)
     assert "secret-token" not in raw_text
+    assert "openai-secret" not in raw_text
+    assert "deepseek-secret" not in raw_text
     assert raw_payload["api_key"].startswith("protected:")
+    assert raw_payload["openai_api_key"].startswith("protected:")
+    assert raw_payload["deepseek_api_key"].startswith("protected:")
     assert load_settings(path=settings_path, unprotector=unprotect) == settings
 
 
