@@ -4,6 +4,7 @@ from brainshtorm.models import (
     KeywordCluster,
     MarketMetrics,
     NicheAssessment,
+    ProductRecommendation,
     SerpAnalysis,
     SerpResult,
 )
@@ -130,6 +131,33 @@ def make_assessment_with_keyword_clusters() -> NicheAssessment:
     )
 
 
+def make_assessment_with_product_recommendation() -> NicheAssessment:
+    assessment = make_assessment()
+    return NicheAssessment(
+        direction=assessment.direction,
+        metrics=assessment.metrics,
+        score=assessment.score,
+        verdict=assessment.verdict,
+        explanation=assessment.explanation,
+        product_idea=assessment.product_idea,
+        promotion_steps=assessment.promotion_steps,
+        risks=assessment.risks,
+        product_recommendation=ProductRecommendation(
+            product_title="Лидогенератор ремонта роботов пылесосов",
+            launch_type="Лидогенератор услуги",
+            target_audience="Владельцы роботов-пылесосов в Москве",
+            opportunity_score=82.0,
+            offer="Диагностика и ремонт с подбором мастера",
+            why_this_can_rank="Есть слабый коммерческий кластер.",
+            landing_pages=["Страница под `ремонт робота пылесоса цена`"],
+            traffic_plan=["SEO по кластеру цен", "Директ по горячим запросам"],
+            first_test="Запустить 3 посадочные страницы и форму заявки.",
+            evidence=["Спрос 8500", "Кластер цен сложность 4/10"],
+            risks=["Следить за стоимостью лида"],
+        ),
+    )
+
+
 def test_markdown_report_contains_ranked_verdicts():
     report = render_markdown_report([make_assessment()])
 
@@ -161,3 +189,12 @@ def test_markdown_report_contains_keyword_clusters_when_available():
     assert "ремонт/сервис" in report
     assert "ремонт роботов пылесосов xiaomi" in report
     assert "difficulty 8/10" in report
+
+
+def test_markdown_report_contains_product_recommendation_when_available():
+    report = render_markdown_report([make_assessment_with_product_recommendation()])
+
+    assert "Launch recommendation" in report
+    assert "Лидогенератор ремонта роботов пылесосов" in report
+    assert "Opportunity score: `82.0`" in report
+    assert "ремонт робота пылесоса цена" in report

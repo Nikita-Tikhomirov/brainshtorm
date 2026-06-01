@@ -9,6 +9,7 @@ from brainshtorm.models import (
     DirectionInput,
     MarketMetrics,
     NicheAssessment,
+    ProductRecommendation,
     SerpAnalysis,
     SerpResult,
     TAKE,
@@ -41,6 +42,19 @@ def make_assessment() -> NicheAssessment:
         product_idea="Лидогенератор заявок.",
         promotion_steps=["Собрать семантику."],
         risks=["Проверить экономику лида."],
+        product_recommendation=ProductRecommendation(
+            product_title="Лидогенератор ремонта роботов пылесосов",
+            launch_type="Лидогенератор услуги",
+            target_audience="Владельцы роботов-пылесосов",
+            opportunity_score=82.0,
+            offer="Диагностика и ремонт с подбором мастера",
+            why_this_can_rank="Есть слабый коммерческий кластер.",
+            landing_pages=["Страница под `ремонт робота пылесоса цена`"],
+            traffic_plan=["SEO по кластеру цен"],
+            first_test="Запустить 3 посадочные страницы.",
+            evidence=["Спрос 9000"],
+            risks=["Следить за стоимостью лида"],
+        ),
         serp_analysis=SerpAnalysis(
             query="ремонт роботов пылесосов",
             results=[
@@ -71,6 +85,8 @@ def test_build_ai_prompt_contains_metrics_serp_and_output_contract():
     assert "top_domains: profi.ru" in prompt
     assert "Ответь на русском" in prompt
     assert "Вердикт" in prompt
+    assert "launch_recommendation" in prompt
+    assert "Лидогенератор ремонта роботов пылесосов" in prompt
 
 
 def test_openai_client_posts_responses_request_and_returns_output_text():

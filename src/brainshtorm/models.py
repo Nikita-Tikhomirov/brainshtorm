@@ -69,6 +69,21 @@ class KeywordCluster:
 
 
 @dataclass(frozen=True)
+class ProductRecommendation:
+    product_title: str
+    launch_type: str
+    target_audience: str
+    opportunity_score: float
+    offer: str
+    why_this_can_rank: str
+    landing_pages: list[str]
+    traffic_plan: list[str]
+    first_test: str
+    evidence: list[str]
+    risks: list[str]
+
+
+@dataclass(frozen=True)
 class NicheAssessment:
     direction: DirectionInput
     metrics: MarketMetrics
@@ -80,4 +95,5 @@ class NicheAssessment:
     risks: list[str]
     serp_analysis: SerpAnalysis | None = None
     keyword_clusters: list[KeywordCluster] = field(default_factory=list)
+    product_recommendation: ProductRecommendation | None = None
     ai_insight: str | None = None

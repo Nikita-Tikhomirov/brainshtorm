@@ -140,6 +140,23 @@ def build_ai_prompt(assessment: NicheAssessment) -> str:
                     f"{cluster.name}; query={cluster.representative_query}; "
                     f"demand={cluster.total_demand}; SERP=нет данных"
                 )
+    recommendation_lines = ["launch_recommendation: нет данных"]
+    if assessment.product_recommendation:
+        recommendation = assessment.product_recommendation
+        recommendation_lines = [
+            "launch_recommendation:",
+            f"product_title: {recommendation.product_title}",
+            f"launch_type: {recommendation.launch_type}",
+            f"target_audience: {recommendation.target_audience}",
+            f"opportunity_score: {recommendation.opportunity_score}",
+            f"offer: {recommendation.offer}",
+            f"why_this_can_rank: {recommendation.why_this_can_rank}",
+            f"landing_pages: {'; '.join(recommendation.landing_pages)}",
+            f"traffic_plan: {'; '.join(recommendation.traffic_plan)}",
+            f"first_test: {recommendation.first_test}",
+            f"evidence: {'; '.join(recommendation.evidence)}",
+            f"recommendation_risks: {'; '.join(recommendation.risks)}",
+        ]
 
     return "\n".join(
         [
@@ -167,6 +184,7 @@ def build_ai_prompt(assessment: NicheAssessment) -> str:
             f"estimated_difficulty: {metrics.estimated_difficulty}/10",
             *serp_lines,
             *cluster_lines,
+            *recommendation_lines,
             f"existing_product_idea: {assessment.product_idea}",
             f"known_risks: {'; '.join(assessment.risks)}",
         ]

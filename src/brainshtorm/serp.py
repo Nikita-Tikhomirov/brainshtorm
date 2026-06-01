@@ -217,7 +217,7 @@ def apply_serp_analysis(assessment: NicheAssessment, analysis: SerpAnalysis) -> 
     risks = list(assessment.risks)
     if analysis.estimated_difficulty > assessment.direction.max_difficulty:
         risks.append(
-            "SERP: выдача сложнее заданного лимита, нужны ручная проверка конкурентов и офферов."
+            "SERP: выдача сложнее заданного лимита, нужен автоматический разбор конкурентов и офферов."
         )
     elif analysis.aggregator_count or analysis.marketplace_count:
         risks.append("SERP: в топе есть агрегаторы или маркетплейсы, вход может быть дороже.")
@@ -256,10 +256,10 @@ def apply_keyword_cluster_serp_analysis(
 
     if average_difficulty > assessment.direction.max_difficulty:
         risks.append(
-            "Кластеры: коммерческие запросы сложнее заданного лимита, нужна ручная проверка топа."
+            "Кластеры: коммерческие запросы сложнее заданного лимита, нужен автоматический разбор топа."
         )
     elif cluster_delta > 0:
-        risks.append("Кластеры: есть признаки слабой коммерческой выдачи, проверить офферы вручную.")
+        risks.append("Кластеры: есть признаки слабой коммерческой выдачи, следующий шаг — автоматический разбор офферов.")
 
     return replace(
         assessment,

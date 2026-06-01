@@ -9,6 +9,7 @@ from brainshtorm.ai import AiError, DeepSeekClient, OpenAiClient, apply_ai_insig
 from brainshtorm.app_inputs import parse_pasted_directions
 from brainshtorm.keywords import attach_cluster_serp
 from brainshtorm.models import NicheAssessment
+from brainshtorm.opportunity import apply_product_recommendation
 from brainshtorm.providers import DemoMarketDataProvider
 from brainshtorm.reporting import render_markdown_report
 from brainshtorm.scoring import score_direction
@@ -319,6 +320,8 @@ def _run_analysis(
             keyword_clusters=keyword_clusters,
         )
 
+    ranked = [apply_product_recommendation(assessment) for assessment in ranked]
+
     if enable_ai:
         ranked = _apply_ai_to_finalists(
             ranked,
@@ -498,10 +501,14 @@ def _render_results(assessments: list[NicheAssessment]) -> None:
 
 def _assessment_row(assessment: NicheAssessment) -> dict[str, object]:
     serp = assessment.serp_analysis
+    recommendation = assessment.product_recommendation
     return {
         "direction": assessment.direction.direction,
         "score": assessment.score,
         "verdict": assessment.verdict,
+        "opportunity_score": recommendation.opportunity_score if recommendation else "",
+        "launch": recommendation.product_title if recommendation else "",
+        "first_test": recommendation.first_test if recommendation else "",
         "demand": assessment.metrics.demand,
         "trend": assessment.metrics.trend,
         "competition": assessment.metrics.competition,

@@ -43,6 +43,30 @@ def render_markdown_report(assessments: list[NicheAssessment]) -> str:
             ]
         )
         lines.extend(f"- {step}" for step in assessment.promotion_steps)
+        if assessment.product_recommendation:
+            recommendation = assessment.product_recommendation
+            lines.extend(
+                [
+                    "",
+                    "Launch recommendation:",
+                    "",
+                    f"- Product: {recommendation.product_title}",
+                    f"- Launch type: {recommendation.launch_type}",
+                    f"- Opportunity score: `{recommendation.opportunity_score:.1f}`",
+                    f"- Audience: {recommendation.target_audience}",
+                    f"- Offer: {recommendation.offer}",
+                    f"- Why it can rank: {recommendation.why_this_can_rank}",
+                    f"- First test: {recommendation.first_test}",
+                    "",
+                    "Landing pages:",
+                    "",
+                ]
+            )
+            lines.extend(f"- {page}" for page in recommendation.landing_pages)
+            lines.extend(["", "Traffic plan:", ""])
+            lines.extend(f"- {step}" for step in recommendation.traffic_plan)
+            lines.extend(["", "Evidence:", ""])
+            lines.extend(f"- {item}" for item in recommendation.evidence)
         if assessment.serp_analysis:
             serp = assessment.serp_analysis
             lines.extend(
