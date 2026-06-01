@@ -5,6 +5,7 @@ import io
 
 import streamlit as st
 
+from brainshtorm.ai import OllamaClient, OllamaError, apply_ai_insight, generate_ai_insight
 from brainshtorm.app_inputs import parse_pasted_directions
 from brainshtorm.models import NicheAssessment
 from brainshtorm.providers import DemoMarketDataProvider
@@ -132,6 +133,19 @@ def run_app() -> None:
             _snap_to_step(settings.serp_results, minimum=5, maximum=30, step=5),
             5,
         )
+        st.header("AI-вердикт")
+        enable_ai = st.checkbox(
+            "Генерировать AI-вердикт финалистов",
+            value=settings.enable_ai,
+        )
+        ai_model = st.text_input("Ollama модель", value=settings.ai_model)
+        ai_finalists = st.slider(
+            "Финалистов для AI",
+            1,
+            20,
+            _clamp(settings.ai_finalists, 1, 20),
+        )
+        ollama_base_url = st.text_input("Ollama URL", value=settings.ollama_base_url)
 
     pasted = st.text_area(
         "Список направлений, по одному на строку",
@@ -153,6 +167,10 @@ def run_app() -> None:
         enable_serp=enable_serp,
         serp_finalists=int(serp_finalists),
         serp_results=int(serp_results),
+        enable_ai=enable_ai,
+        ai_model=ai_model,
+        ai_finalists=int(ai_finalists),
+        ollama_base_url=ollama_base_url,
         pasted_directions=pasted,
     )
 
@@ -190,9 +208,13 @@ def run_app() -> None:
             serp_region_id=_selected_serp_region_id(region_label, custom_region_id),
             serp_finalists=int(serp_finalists),
             serp_results=int(serp_results),
+            enable_ai=enable_ai,
+            ai_model=ai_model,
+            ai_finalists=int(ai_finalists),
+            ollama_base_url=ollama_base_url,
             directions=directions,
         )
-    except (ValueError, YandexWordstatError, YandexSerpError) as exc:
+    except (ValueError, YandexWordstatError, YandexSerpError, OllamaError) as exc:
         st.error(str(exc))
         return
 
@@ -210,6 +232,10 @@ def _run_analysis(
     serp_region_id: str,
     serp_finalists: int,
     serp_results: int,
+    enable_ai: bool,
+    ai_model: str,
+    ai_finalists: int,
+    ollama_base_url: str,
     directions,
 ) -> list[NicheAssessment]:
     if provider_name == "Demo":
@@ -229,25 +255,73 @@ def _run_analysis(
         progress.progress(index / len(directions))
     ranked = sorted(assessments, key=lambda item: item.score, reverse=True)
 
-    if not enable_serp:
-        return ranked
+    if enable_serp:
+        ranked = _apply_serp_to_finalists(
+            ranked,
+            provider_name=provider_name,
+            api_key=api_key,
+            folder_id=folder_id,
+            region_id=serp_region_id,
+            finalists=serp_finalists,
+            results_limit=serp_results,
+        )
 
+    if enable_ai:
+        ranked = _apply_ai_to_finalists(
+            ranked,
+            model=ai_model,
+            finalists=ai_finalists,
+            base_url=ollama_base_url,
+        )
+
+    return ranked
+
+
+def _apply_serp_to_finalists(
+    assessments: list[NicheAssessment],
+    *,
+    provider_name: str,
+    api_key: str,
+    folder_id: str,
+    region_id: str,
+    finalists: int,
+    results_limit: int,
+) -> list[NicheAssessment]:
     serp_provider = _build_serp_provider(
         provider_name=provider_name,
         api_key=api_key,
         folder_id=folder_id,
-        region_id=serp_region_id,
-        results_limit=serp_results,
+        region_id=region_id,
+        results_limit=results_limit,
     )
-    finalist_count = min(max(1, serp_finalists), len(ranked))
+    finalist_count = min(max(1, finalists), len(assessments))
     serp_progress = st.progress(0)
-    adjusted = list(ranked)
-    for index, assessment in enumerate(ranked[:finalist_count], start=1):
+    adjusted = list(assessments)
+    for index, assessment in enumerate(assessments[:finalist_count], start=1):
         analysis = serp_provider.analysis_for(assessment.direction)
         adjusted[index - 1] = apply_serp_analysis(assessment, analysis)
         serp_progress.progress(index / finalist_count)
 
     return sorted(adjusted, key=lambda item: item.score, reverse=True)
+
+
+def _apply_ai_to_finalists(
+    assessments: list[NicheAssessment],
+    *,
+    model: str,
+    finalists: int,
+    base_url: str,
+) -> list[NicheAssessment]:
+    client = OllamaClient(model=model, base_url=base_url)
+    finalist_count = min(max(1, finalists), len(assessments))
+    ai_progress = st.progress(0)
+    adjusted = list(assessments)
+    for index, assessment in enumerate(assessments[:finalist_count], start=1):
+        insight = generate_ai_insight(assessment, client)
+        adjusted[index - 1] = apply_ai_insight(assessment, insight)
+        ai_progress.progress(index / finalist_count)
+
+    return adjusted
 
 
 def _build_serp_provider(
@@ -323,6 +397,7 @@ def _assessment_row(assessment: NicheAssessment) -> dict[str, object]:
         "serp_difficulty": serp.estimated_difficulty if serp else "",
         "serp_delta": serp.score_delta if serp else "",
         "top_domains": ", ".join(serp.top_domains) if serp else "",
+        "ai_insight": _short_text(assessment.ai_insight),
         "product": assessment.product_idea,
     }
 
@@ -352,6 +427,15 @@ def _selected_serp_region_id(region_label: str, custom_region_id: str) -> str:
     if region_ids:
         return region_ids[0]
     return DEFAULT_SERP_REGION_ID
+
+
+def _short_text(value: str | None, *, limit: int = 180) -> str:
+    if not value:
+        return ""
+    text = " ".join(value.split())
+    if len(text) <= limit:
+        return text
+    return text[: limit - 1].rstrip() + "..."
 
 
 def _option_index(options: list[str], value: str, *, default: int = 0) -> int:

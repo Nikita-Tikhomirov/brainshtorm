@@ -28,6 +28,10 @@ class AppSettings:
     enable_serp: bool = False
     serp_finalists: int = 10
     serp_results: int = 10
+    enable_ai: bool = False
+    ai_model: str = "qwen3:8b"
+    ai_finalists: int = 5
+    ollama_base_url: str = "http://127.0.0.1:11434"
     pasted_directions: str = ""
 
 
@@ -68,6 +72,10 @@ def load_settings(
         enable_serp=_as_bool(payload.get("enable_serp"), defaults.enable_serp),
         serp_finalists=_as_int(payload.get("serp_finalists"), defaults.serp_finalists),
         serp_results=_as_int(payload.get("serp_results"), defaults.serp_results),
+        enable_ai=_as_bool(payload.get("enable_ai"), defaults.enable_ai),
+        ai_model=_as_str(payload.get("ai_model"), defaults.ai_model),
+        ai_finalists=_as_int(payload.get("ai_finalists"), defaults.ai_finalists),
+        ollama_base_url=_as_str(payload.get("ollama_base_url"), defaults.ollama_base_url),
         pasted_directions=_as_str(payload.get("pasted_directions"), defaults.pasted_directions),
     )
 

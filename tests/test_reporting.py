@@ -64,6 +64,22 @@ def make_assessment_with_serp() -> NicheAssessment:
     )
 
 
+def make_assessment_with_ai() -> NicheAssessment:
+    assessment = make_assessment_with_serp()
+    return NicheAssessment(
+        direction=assessment.direction,
+        metrics=assessment.metrics,
+        score=assessment.score,
+        verdict=assessment.verdict,
+        explanation=assessment.explanation,
+        product_idea=assessment.product_idea,
+        promotion_steps=assessment.promotion_steps,
+        risks=assessment.risks,
+        serp_analysis=assessment.serp_analysis,
+        ai_insight="Вердикт: брать в тест.\nПродукт: лидогенератор заявок.",
+    )
+
+
 def test_markdown_report_contains_ranked_verdicts():
     report = render_markdown_report([make_assessment()])
 
@@ -79,3 +95,10 @@ def test_markdown_report_contains_serp_details_when_available():
     assert "SERP analysis" in report
     assert "profi.ru" in report
     assert "SERP score delta: `-8.4`" in report
+
+
+def test_markdown_report_contains_ai_insight_when_available():
+    report = render_markdown_report([make_assessment_with_ai()])
+
+    assert "AI verdict" in report
+    assert "Вердикт: брать в тест." in report

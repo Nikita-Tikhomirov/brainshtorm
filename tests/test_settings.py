@@ -31,6 +31,10 @@ def test_save_and_load_settings_roundtrip_with_protected_key(tmp_path):
         enable_serp=True,
         serp_finalists=12,
         serp_results=20,
+        enable_ai=True,
+        ai_model="qwen3:8b",
+        ai_finalists=5,
+        ollama_base_url="http://127.0.0.1:11434",
         pasted_directions="ремонт\nкурсы",
     )
 

@@ -61,3 +61,4 @@ class NicheAssessment:
     promotion_steps: list[str]
     risks: list[str]
     serp_analysis: SerpAnalysis | None = None
+    ai_insight: str | None = None

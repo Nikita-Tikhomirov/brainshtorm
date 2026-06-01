@@ -56,6 +56,15 @@ def render_markdown_report(assessments: list[NicheAssessment]) -> str:
                     f"- Top domains: {', '.join(serp.top_domains) or 'n/a'}",
                 ]
             )
+        if assessment.ai_insight:
+            lines.extend(
+                [
+                    "",
+                    "AI verdict:",
+                    "",
+                    assessment.ai_insight,
+                ]
+            )
         lines.extend(["", "Risks:", ""])
         lines.extend(f"- {risk}" for risk in assessment.risks)
         lines.append("")
