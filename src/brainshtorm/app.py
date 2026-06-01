@@ -10,6 +10,7 @@ from brainshtorm.models import NicheAssessment
 from brainshtorm.providers import DemoMarketDataProvider
 from brainshtorm.reporting import render_markdown_report
 from brainshtorm.scoring import score_direction
+from brainshtorm.settings import AppSettings, load_settings, save_settings
 from brainshtorm.yandex_wordstat import (
     YandexWordstatClient,
     YandexWordstatError,
@@ -38,42 +39,95 @@ PROJECT_TYPES = {
 def run_app() -> None:
     st.set_page_config(page_title="Runet Niche Analyzer", layout="wide")
     _inject_styles()
+    settings = load_settings()
 
     st.title("Runet Niche Analyzer")
 
     with st.sidebar:
         st.header("Источник данных")
+        provider_options = ["Yandex Wordstat API", "Demo"]
         provider_name = st.radio(
             "Режим",
-            ["Yandex Wordstat API", "Demo"],
+            provider_options,
+            index=_option_index(provider_options, settings.provider_name),
             horizontal=False,
         )
-        api_key = st.text_input("Yandex API key", type="password")
-        folder_id = st.text_input("Yandex folder ID", type="password")
-        st.caption("Ключ не сохраняется в файлы и используется только в текущем запуске.")
+        api_key = st.text_input("Yandex API key", value=settings.api_key, type="password")
+        folder_id = st.text_input("Yandex folder ID", value=settings.folder_id, type="password")
+        st.caption("Ключи и параметры сохраняются локально в профиле Windows и не попадают в git.")
 
         st.header("Параметры пачки")
-        region_label = st.selectbox("Регион", list(REGION_OPTIONS.keys()), index=0)
-        custom_region_id = st.text_input("ID региона Яндекса, если нужен другой")
-        budget_rub = st.number_input("Бюджет запуска, ₽", min_value=1000, value=150000, step=10000)
-        max_difficulty = st.slider("Максимальная сложность", min_value=1, max_value=10, value=6)
-        project_label = st.selectbox("Тип проекта", list(PROJECT_TYPES.keys()), index=1)
-        num_phrases = st.slider("Фраз Wordstat на направление", 10, 200, 50, 10)
+        region_options = list(REGION_OPTIONS.keys())
+        region_label = st.selectbox(
+            "Регион",
+            region_options,
+            index=_option_index(region_options, settings.region_label),
+        )
+        custom_region_id = st.text_input(
+            "ID региона Яндекса, если нужен другой",
+            value=settings.custom_region_id,
+        )
+        budget_rub = st.number_input(
+            "Бюджет запуска, ₽",
+            min_value=1000,
+            value=max(1000, int(settings.budget_rub)),
+            step=10000,
+        )
+        max_difficulty = st.slider(
+            "Максимальная сложность",
+            min_value=1,
+            max_value=10,
+            value=_clamp(settings.max_difficulty, 1, 10),
+        )
+        project_options = list(PROJECT_TYPES.keys())
+        project_label = st.selectbox(
+            "Тип проекта",
+            project_options,
+            index=_option_index(project_options, settings.project_label, default=1),
+        )
+        num_phrases = st.slider(
+            "Фраз Wordstat на направление",
+            10,
+            200,
+            _snap_to_step(settings.num_phrases, minimum=10, maximum=200, step=10),
+            10,
+        )
 
     pasted = st.text_area(
         "Список направлений, по одному на строку",
+        value=settings.pasted_directions,
         height=220,
         placeholder="ремонт роботов пылесосов\nкурсы нейросетей\nзапчасти для квадроциклов",
     )
 
-    col_run, col_hint = st.columns([1, 3])
+    current_settings = AppSettings(
+        provider_name=provider_name,
+        api_key=api_key,
+        folder_id=folder_id,
+        region_label=region_label,
+        custom_region_id=custom_region_id,
+        budget_rub=int(budget_rub),
+        max_difficulty=int(max_difficulty),
+        project_label=project_label,
+        num_phrases=int(num_phrases),
+        pasted_directions=pasted,
+    )
+
+    col_run, col_save, col_hint = st.columns([1, 1, 3])
     with col_run:
         run_clicked = st.button("Запустить анализ", type="primary", width="stretch")
+    with col_save:
+        save_clicked = st.button("Сохранить параметры", width="stretch")
     with col_hint:
         st.write("Лимит первого рабочего режима: до 100 направлений за прогон.")
 
+    if save_clicked:
+        _save_user_settings(current_settings, show_success=True)
+
     if not run_clicked:
         return
+
+    _save_user_settings(current_settings, show_success=False)
 
     try:
         directions = parse_pasted_directions(
@@ -124,6 +178,17 @@ def _run_analysis(
         assessments.append(score_direction(direction, provider.metrics_for(direction)))
         progress.progress(index / len(directions))
     return sorted(assessments, key=lambda item: item.score, reverse=True)
+
+
+def _save_user_settings(settings: AppSettings, *, show_success: bool) -> None:
+    try:
+        settings_path = save_settings(settings)
+    except OSError as exc:
+        st.warning(f"Не удалось сохранить параметры: {exc}")
+        return
+
+    if show_success:
+        st.success(f"Параметры сохранены: {settings_path}")
 
 
 def _render_results(assessments: list[NicheAssessment]) -> None:
@@ -184,6 +249,22 @@ def _selected_region_ids(region_label: str, custom_region_id: str) -> list[str]:
     if custom:
         return [custom]
     return REGION_OPTIONS[region_label]
+
+
+def _option_index(options: list[str], value: str, *, default: int = 0) -> int:
+    try:
+        return options.index(value)
+    except ValueError:
+        return default
+
+
+def _clamp(value: int, minimum: int, maximum: int) -> int:
+    return max(minimum, min(maximum, int(value)))
+
+
+def _snap_to_step(value: int, *, minimum: int, maximum: int, step: int) -> int:
+    clamped = _clamp(value, minimum, maximum)
+    return minimum + round((clamped - minimum) / step) * step
 
 
 def _inject_styles() -> None:
