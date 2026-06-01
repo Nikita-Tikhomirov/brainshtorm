@@ -5,10 +5,11 @@ import math
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta
+from datetime import date, timedelta
 from typing import Any, Callable
 
-from brainshtorm.models import DirectionInput, MarketMetrics
+from brainshtorm.keywords import build_keyword_clusters
+from brainshtorm.models import DirectionInput, KeywordCluster, MarketMetrics
 from brainshtorm.providers import _estimate_launch_budget, _estimate_risk
 
 
@@ -114,13 +115,10 @@ class YandexWordstatProvider:
         self.region_ids = region_ids
         self.num_phrases = num_phrases
         self.period = build_weekly_period(today=today or date.today(), weeks=8)
+        self._top_cache: dict[tuple[str, tuple[str, ...], int], dict[str, Any]] = {}
 
     def metrics_for(self, direction: DirectionInput) -> MarketMetrics:
-        top = self.client.top_requests(
-            direction.direction,
-            region_ids=self.region_ids,
-            num_phrases=self.num_phrases,
-        )
+        top = self._top_requests_for(direction)
         dynamics = self.client.dynamics(
             direction.direction,
             region_ids=self.region_ids,
@@ -148,6 +146,20 @@ class YandexWordstatProvider:
             seasonality=0.25,
             risk_level=risk_level,
         )
+
+    def keyword_clusters_for(self, direction: DirectionInput, *, max_clusters: int) -> list[KeywordCluster]:
+        top = self._top_requests_for(direction)
+        return build_keyword_clusters(top, max_clusters=max_clusters, phrase_limit=self.num_phrases)
+
+    def _top_requests_for(self, direction: DirectionInput) -> dict[str, Any]:
+        cache_key = (direction.direction, tuple(self.region_ids), self.num_phrases)
+        if cache_key not in self._top_cache:
+            self._top_cache[cache_key] = self.client.top_requests(
+                direction.direction,
+                region_ids=self.region_ids,
+                num_phrases=self.num_phrases,
+            )
+        return self._top_cache[cache_key]
 
 
 def build_weekly_period(*, today: date, weeks: int) -> WeeklyPeriod:

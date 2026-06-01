@@ -56,6 +56,25 @@ def render_markdown_report(assessments: list[NicheAssessment]) -> str:
                     f"- Top domains: {', '.join(serp.top_domains) or 'n/a'}",
                 ]
             )
+        if assessment.keyword_clusters:
+            lines.extend(["", "Keyword clusters:", ""])
+            for cluster in assessment.keyword_clusters:
+                serp = cluster.serp_analysis
+                if serp:
+                    lines.append(
+                        "- "
+                        f"{cluster.name}: `{cluster.representative_query}`; "
+                        f"demand {cluster.total_demand}; "
+                        f"difficulty {serp.estimated_difficulty}/10; "
+                        f"delta `{serp.score_delta}`; "
+                        f"top {', '.join(serp.top_domains) or 'n/a'}"
+                    )
+                else:
+                    lines.append(
+                        "- "
+                        f"{cluster.name}: `{cluster.representative_query}`; "
+                        f"demand {cluster.total_demand}; SERP not checked"
+                    )
         if assessment.ai_insight:
             lines.extend(
                 [

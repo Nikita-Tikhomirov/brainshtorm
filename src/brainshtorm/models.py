@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 
 TAKE = "take"
@@ -51,6 +51,24 @@ class SerpAnalysis:
 
 
 @dataclass(frozen=True)
+class KeywordCandidate:
+    phrase: str
+    count: int
+    commercial_score: float
+    modifiers: list[str]
+
+
+@dataclass(frozen=True)
+class KeywordCluster:
+    name: str
+    representative_query: str
+    phrases: list[KeywordCandidate]
+    total_demand: int
+    commercial_score: float
+    serp_analysis: SerpAnalysis | None = None
+
+
+@dataclass(frozen=True)
 class NicheAssessment:
     direction: DirectionInput
     metrics: MarketMetrics
@@ -61,4 +79,5 @@ class NicheAssessment:
     promotion_steps: list[str]
     risks: list[str]
     serp_analysis: SerpAnalysis | None = None
+    keyword_clusters: list[KeywordCluster] = field(default_factory=list)
     ai_insight: str | None = None

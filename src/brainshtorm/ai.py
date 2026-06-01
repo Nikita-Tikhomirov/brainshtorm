@@ -120,6 +120,26 @@ def build_ai_prompt(assessment: NicheAssessment) -> str:
             f"serp_summary: {serp.summary}",
             f"top_domains: {', '.join(serp.top_domains) or 'n/a'}",
         ]
+    cluster_lines = ["keyword_clusters: нет данных"]
+    if assessment.keyword_clusters:
+        cluster_lines = ["keyword_clusters:"]
+        for cluster in assessment.keyword_clusters:
+            cluster_serp = cluster.serp_analysis
+            if cluster_serp:
+                cluster_lines.append(
+                    "- "
+                    f"{cluster.name}; query={cluster.representative_query}; "
+                    f"demand={cluster.total_demand}; "
+                    f"serp_difficulty={cluster_serp.estimated_difficulty}/10; "
+                    f"serp_delta={cluster_serp.score_delta}; "
+                    f"top_domains={', '.join(cluster_serp.top_domains) or 'n/a'}"
+                )
+            else:
+                cluster_lines.append(
+                    "- "
+                    f"{cluster.name}; query={cluster.representative_query}; "
+                    f"demand={cluster.total_demand}; SERP=нет данных"
+                )
 
     return "\n".join(
         [
@@ -146,6 +166,7 @@ def build_ai_prompt(assessment: NicheAssessment) -> str:
             f"estimated_budget: {metrics.estimated_launch_budget}",
             f"estimated_difficulty: {metrics.estimated_difficulty}/10",
             *serp_lines,
+            *cluster_lines,
             f"existing_product_idea: {assessment.product_idea}",
             f"known_risks: {'; '.join(assessment.risks)}",
         ]

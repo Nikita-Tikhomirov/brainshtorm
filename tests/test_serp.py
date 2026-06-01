@@ -1,9 +1,10 @@
 import base64
 
-from brainshtorm.models import DirectionInput, MarketMetrics, NicheAssessment, REVIEW, TAKE
+from brainshtorm.models import DirectionInput, KeywordCandidate, KeywordCluster, MarketMetrics, NicheAssessment, REVIEW, TAKE
 from brainshtorm.serp import (
     YandexSerpClient,
     analyze_serp_results,
+    apply_keyword_cluster_serp_analysis,
     apply_serp_analysis,
     parse_yandex_xml_results,
 )
@@ -122,3 +123,60 @@ def test_apply_serp_analysis_adjusts_assessment_verdict_and_risks():
     assert adjusted.score < assessment.score
     assert adjusted.verdict == REVIEW
     assert any("SERP" in risk for risk in adjusted.risks)
+
+
+def test_apply_keyword_cluster_serp_analysis_attaches_clusters_and_adjusts_score():
+    direction = DirectionInput(
+        direction="ремонт роботов пылесосов",
+        region="Москва",
+        budget_rub=150000,
+        max_difficulty=4,
+        project_type="leadgen",
+    )
+    assessment = NicheAssessment(
+        direction=direction,
+        metrics=MarketMetrics(
+            demand=9000,
+            trend=0.4,
+            regional_affinity=1.1,
+            commercial_intent=0.8,
+            competition=0.45,
+            estimated_launch_budget=125000,
+            estimated_difficulty=4,
+            seasonality=0.2,
+            risk_level=0.0,
+        ),
+        score=76.0,
+        verdict=TAKE,
+        explanation="ok",
+        product_idea="leadgen",
+        promotion_steps=["step"],
+        risks=[],
+    )
+    cluster = KeywordCluster(
+        name="ремонт/сервис",
+        representative_query="ремонт роботов пылесосов xiaomi",
+        phrases=[
+            KeywordCandidate(
+                phrase="ремонт роботов пылесосов xiaomi",
+                count=2600,
+                commercial_score=0.6,
+                modifiers=["ремонт/сервис"],
+            )
+        ],
+        total_demand=2600,
+        commercial_score=0.6,
+        serp_analysis=analyze_serp_results(
+            query="ремонт роботов пылесосов xiaomi",
+            results=parse_yandex_xml_results(SERP_XML),
+            max_difficulty=direction.max_difficulty,
+        ),
+    )
+
+    adjusted = apply_keyword_cluster_serp_analysis(assessment, [cluster])
+
+    assert adjusted.keyword_clusters == [cluster]
+    assert adjusted.score < assessment.score
+    assert adjusted.verdict == REVIEW
+    assert "Кластеры" in adjusted.explanation
+    assert any("Кластеры" in risk for risk in adjusted.risks)

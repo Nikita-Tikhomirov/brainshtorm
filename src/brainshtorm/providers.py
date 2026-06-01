@@ -1,12 +1,16 @@
 import hashlib
 from typing import Protocol
 
-from brainshtorm.models import DirectionInput, MarketMetrics
+from brainshtorm.keywords import build_keyword_clusters
+from brainshtorm.models import DirectionInput, KeywordCluster, MarketMetrics
 
 
 class MarketDataProvider(Protocol):
     def metrics_for(self, direction: DirectionInput) -> MarketMetrics:
         """Return market metrics for one seed direction."""
+
+    def keyword_clusters_for(self, direction: DirectionInput, *, max_clusters: int) -> list[KeywordCluster]:
+        """Return commercial keyword clusters for one seed direction."""
 
 
 class DemoMarketDataProvider:
@@ -35,6 +39,21 @@ class DemoMarketDataProvider:
             seasonality=seasonality,
             risk_level=risk_level,
         )
+
+    def keyword_clusters_for(self, direction: DirectionInput, *, max_clusters: int) -> list[KeywordCluster]:
+        top_response = {
+            "results": [
+                {"phrase": f"{direction.direction} цена", "count": "1800"},
+                {"phrase": f"{direction.direction} заказать", "count": "1400"},
+                {"phrase": f"{direction.direction} отзывы", "count": "900"},
+                {"phrase": f"{direction.direction} купить", "count": "700"},
+                {"phrase": f"{direction.direction} инструкция", "count": "500"},
+            ],
+            "associations": [
+                {"phrase": f"{direction.direction} москва", "count": "600"},
+            ],
+        }
+        return build_keyword_clusters(top_response, max_clusters=max_clusters)
 
 
 def get_provider(name: str) -> MarketDataProvider:

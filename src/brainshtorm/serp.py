@@ -11,7 +11,8 @@ from dataclasses import replace
 import hashlib
 from typing import Any, Callable
 
-from brainshtorm.models import DirectionInput, NicheAssessment, REVIEW, SerpAnalysis, SerpResult, SKIP, TAKE
+from brainshtorm.keywords import summarize_cluster_serp
+from brainshtorm.models import DirectionInput, KeywordCluster, NicheAssessment, REVIEW, SerpAnalysis, SerpResult, SKIP, TAKE
 from brainshtorm.yandex_wordstat import BASE_URL
 
 
@@ -228,6 +229,45 @@ def apply_serp_analysis(assessment: NicheAssessment, analysis: SerpAnalysis) -> 
         explanation=f"{assessment.explanation} SERP: {analysis.summary}",
         risks=risks,
         serp_analysis=analysis,
+    )
+
+
+def apply_keyword_cluster_serp_analysis(
+    assessment: NicheAssessment,
+    clusters: list[KeywordCluster],
+) -> NicheAssessment:
+    checked_clusters = [cluster for cluster in clusters if cluster.serp_analysis]
+    if not checked_clusters:
+        return replace(assessment, keyword_clusters=clusters)
+
+    average_delta = sum(
+        cluster.serp_analysis.score_delta
+        for cluster in checked_clusters
+        if cluster.serp_analysis
+    ) / len(checked_clusters)
+    cluster_delta = round(_clamp_float(average_delta * 0.6, -12.0, 8.0), 1)
+    score = round(_clamp_float(assessment.score + cluster_delta), 1)
+    risks = list(assessment.risks)
+    average_difficulty = sum(
+        cluster.serp_analysis.estimated_difficulty
+        for cluster in checked_clusters
+        if cluster.serp_analysis
+    ) / len(checked_clusters)
+
+    if average_difficulty > assessment.direction.max_difficulty:
+        risks.append(
+            "Кластеры: коммерческие запросы сложнее заданного лимита, нужна ручная проверка топа."
+        )
+    elif cluster_delta > 0:
+        risks.append("Кластеры: есть признаки слабой коммерческой выдачи, проверить офферы вручную.")
+
+    return replace(
+        assessment,
+        score=score,
+        verdict=_verdict_for_score(score),
+        explanation=f"{assessment.explanation} Кластеры: {summarize_cluster_serp(clusters)}.",
+        risks=risks,
+        keyword_clusters=clusters,
     )
 
 

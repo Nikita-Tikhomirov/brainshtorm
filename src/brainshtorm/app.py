@@ -7,6 +7,7 @@ import streamlit as st
 
 from brainshtorm.ai import AiError, DeepSeekClient, OpenAiClient, apply_ai_insight, generate_ai_insight
 from brainshtorm.app_inputs import parse_pasted_directions
+from brainshtorm.keywords import attach_cluster_serp
 from brainshtorm.models import NicheAssessment
 from brainshtorm.providers import DemoMarketDataProvider
 from brainshtorm.reporting import render_markdown_report
@@ -16,6 +17,7 @@ from brainshtorm.serp import (
     YandexSerpClient,
     YandexSerpError,
     YandexSerpProvider,
+    apply_keyword_cluster_serp_analysis,
     apply_serp_analysis,
 )
 from brainshtorm.settings import AppSettings, load_settings, save_settings
@@ -135,6 +137,16 @@ def run_app() -> None:
             _snap_to_step(settings.serp_results, minimum=5, maximum=30, step=5),
             5,
         )
+        enable_cluster_serp = st.checkbox(
+            "Проверять коммерческие кластеры",
+            value=settings.enable_cluster_serp,
+        )
+        keyword_clusters = st.slider(
+            "Кластеров на нишу",
+            1,
+            8,
+            _clamp(settings.keyword_clusters, 1, 8),
+        )
         st.header("AI-вердикт")
         enable_ai = st.checkbox(
             "Генерировать AI-вердикт финалистов",
@@ -190,6 +202,8 @@ def run_app() -> None:
         enable_serp=enable_serp,
         serp_finalists=int(serp_finalists),
         serp_results=int(serp_results),
+        enable_cluster_serp=enable_cluster_serp,
+        keyword_clusters=int(keyword_clusters),
         enable_ai=enable_ai,
         ai_provider=ai_provider,
         openai_api_key=openai_api_key,
@@ -234,6 +248,8 @@ def run_app() -> None:
             serp_region_id=_selected_serp_region_id(region_label, custom_region_id),
             serp_finalists=int(serp_finalists),
             serp_results=int(serp_results),
+            enable_cluster_serp=enable_cluster_serp,
+            keyword_clusters=int(keyword_clusters),
             enable_ai=enable_ai,
             ai_provider=ai_provider,
             openai_api_key=openai_api_key,
@@ -261,6 +277,8 @@ def _run_analysis(
     serp_region_id: str,
     serp_finalists: int,
     serp_results: int,
+    enable_cluster_serp: bool,
+    keyword_clusters: int,
     enable_ai: bool,
     ai_provider: str,
     openai_api_key: str,
@@ -296,6 +314,9 @@ def _run_analysis(
             region_id=serp_region_id,
             finalists=serp_finalists,
             results_limit=serp_results,
+            market_provider=provider,
+            enable_cluster_serp=enable_cluster_serp,
+            keyword_clusters=keyword_clusters,
         )
 
     if enable_ai:
@@ -321,6 +342,9 @@ def _apply_serp_to_finalists(
     region_id: str,
     finalists: int,
     results_limit: int,
+    market_provider,
+    enable_cluster_serp: bool,
+    keyword_clusters: int,
 ) -> list[NicheAssessment]:
     serp_provider = _build_serp_provider(
         provider_name=provider_name,
@@ -334,10 +358,40 @@ def _apply_serp_to_finalists(
     adjusted = list(assessments)
     for index, assessment in enumerate(assessments[:finalist_count], start=1):
         analysis = serp_provider.analysis_for(assessment.direction)
-        adjusted[index - 1] = apply_serp_analysis(assessment, analysis)
+        adjusted_assessment = apply_serp_analysis(assessment, analysis)
+        if enable_cluster_serp:
+            clusters = market_provider.keyword_clusters_for(
+                assessment.direction,
+                max_clusters=keyword_clusters,
+            )
+            checked_clusters = [
+                attach_cluster_serp(
+                    cluster,
+                    serp_provider.analysis_for(
+                        _cluster_direction(assessment, cluster.representative_query)
+                    ),
+                )
+                for cluster in clusters
+            ]
+            adjusted_assessment = apply_keyword_cluster_serp_analysis(
+                adjusted_assessment,
+                checked_clusters,
+            )
+        adjusted[index - 1] = adjusted_assessment
         serp_progress.progress(index / finalist_count)
 
     return sorted(adjusted, key=lambda item: item.score, reverse=True)
+
+
+def _cluster_direction(assessment: NicheAssessment, query: str):
+    direction = assessment.direction
+    return type(direction)(
+        direction=query,
+        region=direction.region,
+        budget_rub=direction.budget_rub,
+        max_difficulty=direction.max_difficulty,
+        project_type=direction.project_type,
+    )
 
 
 def _apply_ai_to_finalists(
@@ -456,6 +510,7 @@ def _assessment_row(assessment: NicheAssessment) -> dict[str, object]:
         "serp_difficulty": serp.estimated_difficulty if serp else "",
         "serp_delta": serp.score_delta if serp else "",
         "top_domains": ", ".join(serp.top_domains) if serp else "",
+        "keyword_clusters": _cluster_summary(assessment),
         "ai_insight": _short_text(assessment.ai_insight),
         "product": assessment.product_idea,
     }
@@ -495,6 +550,17 @@ def _short_text(value: str | None, *, limit: int = 180) -> str:
     if len(text) <= limit:
         return text
     return text[: limit - 1].rstrip() + "..."
+
+
+def _cluster_summary(assessment: NicheAssessment) -> str:
+    parts: list[str] = []
+    for cluster in assessment.keyword_clusters:
+        serp = cluster.serp_analysis
+        if serp:
+            parts.append(f"{cluster.name}: {serp.estimated_difficulty}/10")
+        else:
+            parts.append(cluster.name)
+    return "; ".join(parts)
 
 
 def _option_index(options: list[str], value: str, *, default: int = 0) -> int:

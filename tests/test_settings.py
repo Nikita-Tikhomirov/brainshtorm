@@ -31,6 +31,8 @@ def test_save_and_load_settings_roundtrip_with_protected_key(tmp_path):
         enable_serp=True,
         serp_finalists=12,
         serp_results=20,
+        enable_cluster_serp=True,
+        keyword_clusters=4,
         enable_ai=True,
         ai_provider="DeepSeek",
         openai_api_key="openai-secret",

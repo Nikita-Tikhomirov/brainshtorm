@@ -83,3 +83,47 @@ def test_provider_converts_wordstat_responses_to_market_metrics():
     assert metrics.trend == 0.5
     assert metrics.regional_affinity == 1.3
     assert metrics.commercial_intent > 0.6
+
+
+def test_provider_builds_keyword_clusters_from_cached_top_requests():
+    class FakeClient:
+        top_calls = 0
+
+        def top_requests(self, phrase, *, region_ids, num_phrases):
+            self.top_calls += 1
+            return {
+                "totalCount": "9000",
+                "results": [
+                    {"phrase": "ремонт роботов пылесосов xiaomi", "count": "2600"},
+                    {"phrase": "ремонт робота пылесоса цена", "count": "1900"},
+                    {"phrase": "купить аккумулятор робота пылесоса", "count": "1200"},
+                    {"phrase": "робот пылесос инструкция", "count": "900"},
+                ],
+                "associations": [
+                    {"phrase": "сервис роботов пылесосов москва", "count": "700"},
+                ],
+            }
+
+        def dynamics(self, phrase, *, region_ids, period):
+            return {"results": [{"count": "1000"}, {"count": "1200"}]}
+
+        def regions(self, phrase, *, region_level):
+            return {"results": []}
+
+    client = FakeClient()
+    provider = YandexWordstatProvider(client=client, region_ids=["213"], num_phrases=50)
+    direction = DirectionInput(
+        direction="ремонт роботов пылесосов",
+        region="Москва",
+        budget_rub=150000,
+        max_difficulty=6,
+        project_type="leadgen",
+    )
+
+    provider.metrics_for(direction)
+    clusters = provider.keyword_clusters_for(direction, max_clusters=3)
+
+    assert client.top_calls == 1
+    assert clusters[0].representative_query == "ремонт роботов пылесосов xiaomi"
+    assert clusters[0].total_demand >= 2600
+    assert any(cluster.name == "покупка" for cluster in clusters)

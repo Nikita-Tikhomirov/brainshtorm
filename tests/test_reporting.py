@@ -1,4 +1,12 @@
-from brainshtorm.models import DirectionInput, MarketMetrics, NicheAssessment, SerpAnalysis, SerpResult
+from brainshtorm.models import (
+    DirectionInput,
+    KeywordCandidate,
+    KeywordCluster,
+    MarketMetrics,
+    NicheAssessment,
+    SerpAnalysis,
+    SerpResult,
+)
 from brainshtorm.reporting import render_markdown_report
 
 
@@ -80,6 +88,48 @@ def make_assessment_with_ai() -> NicheAssessment:
     )
 
 
+def make_assessment_with_keyword_clusters() -> NicheAssessment:
+    assessment = make_assessment()
+    return NicheAssessment(
+        direction=assessment.direction,
+        metrics=assessment.metrics,
+        score=assessment.score,
+        verdict=assessment.verdict,
+        explanation=assessment.explanation,
+        product_idea=assessment.product_idea,
+        promotion_steps=assessment.promotion_steps,
+        risks=assessment.risks,
+        keyword_clusters=[
+            KeywordCluster(
+                name="ремонт/сервис",
+                representative_query="ремонт роботов пылесосов xiaomi",
+                phrases=[
+                    KeywordCandidate(
+                        phrase="ремонт роботов пылесосов xiaomi",
+                        count=2600,
+                        commercial_score=0.6,
+                        modifiers=["ремонт/сервис"],
+                    )
+                ],
+                total_demand=2600,
+                commercial_score=0.6,
+                serp_analysis=SerpAnalysis(
+                    query="ремонт роботов пылесосов xiaomi",
+                    results=[],
+                    results_count=0,
+                    top_domains=["profi.ru"],
+                    aggregator_count=1,
+                    marketplace_count=0,
+                    competitor_score=0.8,
+                    estimated_difficulty=8,
+                    score_delta=-7.0,
+                    summary="оценочная сложность выдачи 8/10.",
+                ),
+            )
+        ],
+    )
+
+
 def test_markdown_report_contains_ranked_verdicts():
     report = render_markdown_report([make_assessment()])
 
@@ -102,3 +152,12 @@ def test_markdown_report_contains_ai_insight_when_available():
 
     assert "AI verdict" in report
     assert "Вердикт: брать в тест." in report
+
+
+def test_markdown_report_contains_keyword_clusters_when_available():
+    report = render_markdown_report([make_assessment_with_keyword_clusters()])
+
+    assert "Keyword clusters" in report
+    assert "ремонт/сервис" in report
+    assert "ремонт роботов пылесосов xiaomi" in report
+    assert "difficulty 8/10" in report

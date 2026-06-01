@@ -28,6 +28,8 @@ class AppSettings:
     enable_serp: bool = False
     serp_finalists: int = 10
     serp_results: int = 10
+    enable_cluster_serp: bool = False
+    keyword_clusters: int = 4
     enable_ai: bool = False
     ai_provider: str = "GPT"
     openai_api_key: str = ""
@@ -75,6 +77,8 @@ def load_settings(
         enable_serp=_as_bool(payload.get("enable_serp"), defaults.enable_serp),
         serp_finalists=_as_int(payload.get("serp_finalists"), defaults.serp_finalists),
         serp_results=_as_int(payload.get("serp_results"), defaults.serp_results),
+        enable_cluster_serp=_as_bool(payload.get("enable_cluster_serp"), defaults.enable_cluster_serp),
+        keyword_clusters=_as_int(payload.get("keyword_clusters"), defaults.keyword_clusters),
         enable_ai=_as_bool(payload.get("enable_ai"), defaults.enable_ai),
         ai_provider=_as_str(payload.get("ai_provider"), defaults.ai_provider),
         openai_api_key=unprotect(_as_str(payload.get("openai_api_key"), "")),
