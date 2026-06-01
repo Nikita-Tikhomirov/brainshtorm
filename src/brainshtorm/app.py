@@ -36,6 +36,19 @@ PROJECT_TYPES = {
 }
 
 
+APP_STYLE = """
+<style>
+.stButton > button {
+    border-radius: 6px;
+    font-weight: 600;
+}
+textarea, input {
+    border-radius: 6px !important;
+}
+</style>
+"""
+
+
 def run_app() -> None:
     st.set_page_config(page_title="Runet Niche Analyzer", layout="wide")
     _inject_styles()
@@ -113,13 +126,12 @@ def run_app() -> None:
         pasted_directions=pasted,
     )
 
-    col_run, col_save, col_hint = st.columns([1, 1, 3])
+    col_run, col_save = st.columns(2)
     with col_run:
         run_clicked = st.button("Запустить анализ", type="primary", width="stretch")
     with col_save:
         save_clicked = st.button("Сохранить параметры", width="stretch")
-    with col_hint:
-        st.write("Лимит первого рабочего режима: до 100 направлений за прогон.")
+    st.caption("Лимит первого рабочего режима: до 100 направлений за прогон.")
 
     if save_clicked:
         _save_user_settings(current_settings, show_success=True)
@@ -268,27 +280,7 @@ def _snap_to_step(value: int, *, minimum: int, maximum: int, step: int) -> int:
 
 
 def _inject_styles() -> None:
-    st.markdown(
-        """
-        <style>
-        .stApp {
-            background: #f7f8fb;
-        }
-        div[data-testid="stSidebarContent"] {
-            background: #ffffff;
-            border-right: 1px solid #e5e7eb;
-        }
-        .stButton > button {
-            border-radius: 6px;
-            font-weight: 600;
-        }
-        textarea, input {
-            border-radius: 6px !important;
-        }
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
+    st.markdown(APP_STYLE, unsafe_allow_html=True)
 
 
 if __name__ == "__main__":
