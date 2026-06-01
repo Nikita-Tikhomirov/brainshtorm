@@ -10,6 +10,13 @@ from brainshtorm.models import NicheAssessment
 from brainshtorm.providers import DemoMarketDataProvider
 from brainshtorm.reporting import render_markdown_report
 from brainshtorm.scoring import score_direction
+from brainshtorm.serp import (
+    DemoSerpProvider,
+    YandexSerpClient,
+    YandexSerpError,
+    YandexSerpProvider,
+    apply_serp_analysis,
+)
 from brainshtorm.settings import AppSettings, load_settings, save_settings
 from brainshtorm.yandex_wordstat import (
     YandexWordstatClient,
@@ -24,6 +31,8 @@ REGION_OPTIONS = {
     "Санкт-Петербург": ["2"],
     "Без региона": [],
 }
+
+DEFAULT_SERP_REGION_ID = "225"
 
 
 PROJECT_TYPES = {
@@ -105,6 +114,24 @@ def run_app() -> None:
             _snap_to_step(settings.num_phrases, minimum=10, maximum=200, step=10),
             10,
         )
+        st.header("SERP-анализ")
+        enable_serp = st.checkbox(
+            "Проверять выдачу финалистов",
+            value=settings.enable_serp,
+        )
+        serp_finalists = st.slider(
+            "Финалистов для SERP",
+            1,
+            30,
+            _clamp(settings.serp_finalists, 1, 30),
+        )
+        serp_results = st.slider(
+            "Результатов выдачи на нишу",
+            5,
+            30,
+            _snap_to_step(settings.serp_results, minimum=5, maximum=30, step=5),
+            5,
+        )
 
     pasted = st.text_area(
         "Список направлений, по одному на строку",
@@ -123,6 +150,9 @@ def run_app() -> None:
         max_difficulty=int(max_difficulty),
         project_label=project_label,
         num_phrases=int(num_phrases),
+        enable_serp=enable_serp,
+        serp_finalists=int(serp_finalists),
+        serp_results=int(serp_results),
         pasted_directions=pasted,
     )
 
@@ -156,9 +186,13 @@ def run_app() -> None:
             folder_id=folder_id,
             region_ids=region_ids,
             num_phrases=num_phrases,
+            enable_serp=enable_serp,
+            serp_region_id=_selected_serp_region_id(region_label, custom_region_id),
+            serp_finalists=int(serp_finalists),
+            serp_results=int(serp_results),
             directions=directions,
         )
-    except (ValueError, YandexWordstatError) as exc:
+    except (ValueError, YandexWordstatError, YandexSerpError) as exc:
         st.error(str(exc))
         return
 
@@ -172,6 +206,10 @@ def _run_analysis(
     folder_id: str,
     region_ids: list[str],
     num_phrases: int,
+    enable_serp: bool,
+    serp_region_id: str,
+    serp_finalists: int,
+    serp_results: int,
     directions,
 ) -> list[NicheAssessment]:
     if provider_name == "Demo":
@@ -189,7 +227,46 @@ def _run_analysis(
     for index, direction in enumerate(directions, start=1):
         assessments.append(score_direction(direction, provider.metrics_for(direction)))
         progress.progress(index / len(directions))
-    return sorted(assessments, key=lambda item: item.score, reverse=True)
+    ranked = sorted(assessments, key=lambda item: item.score, reverse=True)
+
+    if not enable_serp:
+        return ranked
+
+    serp_provider = _build_serp_provider(
+        provider_name=provider_name,
+        api_key=api_key,
+        folder_id=folder_id,
+        region_id=serp_region_id,
+        results_limit=serp_results,
+    )
+    finalist_count = min(max(1, serp_finalists), len(ranked))
+    serp_progress = st.progress(0)
+    adjusted = list(ranked)
+    for index, assessment in enumerate(ranked[:finalist_count], start=1):
+        analysis = serp_provider.analysis_for(assessment.direction)
+        adjusted[index - 1] = apply_serp_analysis(assessment, analysis)
+        serp_progress.progress(index / finalist_count)
+
+    return sorted(adjusted, key=lambda item: item.score, reverse=True)
+
+
+def _build_serp_provider(
+    *,
+    provider_name: str,
+    api_key: str,
+    folder_id: str,
+    region_id: str,
+    results_limit: int,
+):
+    if provider_name == "Demo":
+        return DemoSerpProvider(results_limit=results_limit)
+
+    client = YandexSerpClient(api_key=api_key, folder_id=folder_id)
+    return YandexSerpProvider(
+        client=client,
+        region_id=region_id,
+        results_limit=results_limit,
+    )
 
 
 def _save_user_settings(settings: AppSettings, *, show_success: bool) -> None:
@@ -233,6 +310,7 @@ def _render_results(assessments: list[NicheAssessment]) -> None:
 
 
 def _assessment_row(assessment: NicheAssessment) -> dict[str, object]:
+    serp = assessment.serp_analysis
     return {
         "direction": assessment.direction.direction,
         "score": assessment.score,
@@ -242,6 +320,9 @@ def _assessment_row(assessment: NicheAssessment) -> dict[str, object]:
         "competition": assessment.metrics.competition,
         "budget_fit": assessment.metrics.estimated_launch_budget,
         "difficulty": assessment.metrics.estimated_difficulty,
+        "serp_difficulty": serp.estimated_difficulty if serp else "",
+        "serp_delta": serp.score_delta if serp else "",
+        "top_domains": ", ".join(serp.top_domains) if serp else "",
         "product": assessment.product_idea,
     }
 
@@ -261,6 +342,16 @@ def _selected_region_ids(region_label: str, custom_region_id: str) -> list[str]:
     if custom:
         return [custom]
     return REGION_OPTIONS[region_label]
+
+
+def _selected_serp_region_id(region_label: str, custom_region_id: str) -> str:
+    custom = custom_region_id.strip()
+    if custom:
+        return custom
+    region_ids = REGION_OPTIONS[region_label]
+    if region_ids:
+        return region_ids[0]
+    return DEFAULT_SERP_REGION_ID
 
 
 def _option_index(options: list[str], value: str, *, default: int = 0) -> int:

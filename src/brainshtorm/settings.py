@@ -25,6 +25,9 @@ class AppSettings:
     max_difficulty: int = 6
     project_label: str = "Лидогенерация"
     num_phrases: int = 50
+    enable_serp: bool = False
+    serp_finalists: int = 10
+    serp_results: int = 10
     pasted_directions: str = ""
 
 
@@ -62,6 +65,9 @@ def load_settings(
         max_difficulty=_as_int(payload.get("max_difficulty"), defaults.max_difficulty),
         project_label=_as_str(payload.get("project_label"), defaults.project_label),
         num_phrases=_as_int(payload.get("num_phrases"), defaults.num_phrases),
+        enable_serp=_as_bool(payload.get("enable_serp"), defaults.enable_serp),
+        serp_finalists=_as_int(payload.get("serp_finalists"), defaults.serp_finalists),
+        serp_results=_as_int(payload.get("serp_results"), defaults.serp_results),
         pasted_directions=_as_str(payload.get("pasted_directions"), defaults.pasted_directions),
     )
 
@@ -132,6 +138,10 @@ def _as_int(value: Any, default: int) -> int:
         return int(value)
     except (TypeError, ValueError):
         return default
+
+
+def _as_bool(value: Any, default: bool) -> bool:
+    return value if isinstance(value, bool) else default
 
 
 class _DataBlob(ctypes.Structure):

@@ -1,4 +1,4 @@
-from brainshtorm.models import DirectionInput, MarketMetrics, NicheAssessment
+from brainshtorm.models import DirectionInput, MarketMetrics, NicheAssessment, SerpAnalysis, SerpResult
 from brainshtorm.reporting import render_markdown_report
 
 
@@ -31,6 +31,39 @@ def make_assessment() -> NicheAssessment:
     )
 
 
+def make_assessment_with_serp() -> NicheAssessment:
+    assessment = make_assessment()
+    return NicheAssessment(
+        direction=assessment.direction,
+        metrics=assessment.metrics,
+        score=74.0,
+        verdict="review",
+        explanation=assessment.explanation,
+        product_idea=assessment.product_idea,
+        promotion_steps=assessment.promotion_steps,
+        risks=assessment.risks,
+        serp_analysis=SerpAnalysis(
+            query="ремонт роботов пылесосов",
+            results=[
+                SerpResult(
+                    title="Ремонт роботов пылесосов",
+                    url="https://profi.ru/remont/robot-pylesos/",
+                    domain="profi.ru",
+                    snippet="Мастера и цены.",
+                )
+            ],
+            results_count=1,
+            top_domains=["profi.ru"],
+            aggregator_count=1,
+            marketplace_count=0,
+            competitor_score=0.8,
+            estimated_difficulty=8,
+            score_delta=-8.4,
+            summary="оценочная сложность выдачи 8/10; агрегаторов в топе: 1.",
+        ),
+    )
+
+
 def test_markdown_report_contains_ranked_verdicts():
     report = render_markdown_report([make_assessment()])
 
@@ -38,3 +71,11 @@ def test_markdown_report_contains_ranked_verdicts():
     assert "ремонт роботов пылесосов" in report
     assert "take" in report
     assert "SEO-страницы по моделям" in report
+
+
+def test_markdown_report_contains_serp_details_when_available():
+    report = render_markdown_report([make_assessment_with_serp()])
+
+    assert "SERP analysis" in report
+    assert "profi.ru" in report
+    assert "SERP score delta: `-8.4`" in report

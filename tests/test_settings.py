@@ -28,6 +28,9 @@ def test_save_and_load_settings_roundtrip_with_protected_key(tmp_path):
         max_difficulty=4,
         project_label="SEO-сайт",
         num_phrases=80,
+        enable_serp=True,
+        serp_finalists=12,
+        serp_results=20,
         pasted_directions="ремонт\nкурсы",
     )
 

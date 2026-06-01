@@ -29,6 +29,28 @@ class MarketMetrics:
 
 
 @dataclass(frozen=True)
+class SerpResult:
+    title: str
+    url: str
+    domain: str
+    snippet: str
+
+
+@dataclass(frozen=True)
+class SerpAnalysis:
+    query: str
+    results: list[SerpResult]
+    results_count: int
+    top_domains: list[str]
+    aggregator_count: int
+    marketplace_count: int
+    competitor_score: float
+    estimated_difficulty: int
+    score_delta: float
+    summary: str
+
+
+@dataclass(frozen=True)
 class NicheAssessment:
     direction: DirectionInput
     metrics: MarketMetrics
@@ -38,3 +60,4 @@ class NicheAssessment:
     product_idea: str
     promotion_steps: list[str]
     risks: list[str]
+    serp_analysis: SerpAnalysis | None = None

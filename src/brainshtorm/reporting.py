@@ -43,6 +43,19 @@ def render_markdown_report(assessments: list[NicheAssessment]) -> str:
             ]
         )
         lines.extend(f"- {step}" for step in assessment.promotion_steps)
+        if assessment.serp_analysis:
+            serp = assessment.serp_analysis
+            lines.extend(
+                [
+                    "",
+                    "SERP analysis:",
+                    "",
+                    f"- SERP difficulty: {serp.estimated_difficulty}/10",
+                    f"- SERP score delta: `{serp.score_delta:.1f}`",
+                    f"- SERP summary: {serp.summary}",
+                    f"- Top domains: {', '.join(serp.top_domains) or 'n/a'}",
+                ]
+            )
         lines.extend(["", "Risks:", ""])
         lines.extend(f"- {risk}" for risk in assessment.risks)
         lines.append("")
