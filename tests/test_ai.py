@@ -1,6 +1,7 @@
 from types import SimpleNamespace
 
 from brainshtorm.ai import (
+    AiError,
     DeepSeekClient,
     OpenAiClient,
     apply_ai_insight,
@@ -249,6 +250,80 @@ def test_deepseek_client_posts_chat_completion_request_and_returns_message():
     assert calls[0][1]["messages"][1]["content"] == "prompt"
     assert calls[0][1]["thinking"] == {"type": "enabled"}
     assert calls[0][2]["Authorization"] == "Bearer deepseek-secret"
+
+
+def test_deepseek_client_retries_empty_thinking_message_without_thinking():
+    calls = []
+
+    def transport(url, body, headers, timeout):
+        calls.append(body)
+        if len(calls) == 1:
+            return {
+                "choices": [
+                    {
+                        "finish_reason": "length",
+                        "message": {
+                            "content": "",
+                            "reasoning_content": "thinking consumed the budget",
+                        },
+                    }
+                ],
+            }
+        return {
+            "choices": [
+                {"finish_reason": "stop", "message": {"content": "Вердикт: брать в тест."}},
+            ],
+        }
+
+    client = DeepSeekClient(
+        api_key="deepseek-secret",
+        model="deepseek-v4-pro",
+        transport=transport,
+    )
+
+    result = client.generate("prompt", max_output_tokens=900)
+
+    assert result == "Вердикт: брать в тест."
+    assert calls[0]["thinking"] == {"type": "enabled"}
+    assert calls[1]["thinking"] == {"type": "disabled"}
+    assert "reasoning_effort" not in calls[1]
+    assert calls[1]["max_tokens"] >= 1600
+
+
+def test_deepseek_client_empty_message_error_has_diagnostics_after_retry():
+    calls = []
+
+    def transport(url, body, headers, timeout):
+        calls.append(body)
+        return {
+            "choices": [
+                {
+                    "finish_reason": "length",
+                    "message": {
+                        "content": "",
+                        "reasoning_content": "thinking only",
+                    },
+                }
+            ],
+        }
+
+    client = DeepSeekClient(
+        api_key="deepseek-secret",
+        model="deepseek-v4-pro",
+        transport=transport,
+    )
+
+    try:
+        client.generate("prompt", max_output_tokens=900)
+    except AiError as exc:
+        message = str(exc)
+    else:
+        raise AssertionError("DeepSeekClient should raise AiError")
+
+    assert len(calls) == 2
+    assert "finish_reason=length" in message
+    assert "reasoning_content_present=True" in message
+    assert "non-thinking retry" in message
 
 
 def test_build_project_type_prompt_contains_allowed_types_and_candidates():

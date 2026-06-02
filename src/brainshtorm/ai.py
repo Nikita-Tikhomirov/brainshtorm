@@ -100,24 +100,44 @@ class DeepSeekClient:
         self.transport = transport or _urllib_transport
 
     def generate(self, prompt: str, *, max_output_tokens: int = 900) -> str:
-        body: dict[str, Any] = {
-            "model": self.model,
-            "messages": [
-                {"role": "system", "content": AI_SYSTEM_INSTRUCTIONS},
-                {"role": "user", "content": prompt},
-            ],
-            "thinking": {"type": "enabled"},
-            "reasoning_effort": "high",
-            "stream": False,
-            "max_tokens": max_output_tokens,
-        }
+        body = _deepseek_body(
+            model=self.model,
+            prompt=prompt,
+            max_output_tokens=max_output_tokens,
+            thinking_enabled=True,
+        )
         response = self.transport(
             f"{self.base_url}/chat/completions",
             body,
             {"Authorization": f"Bearer {self.api_key}"},
             self.timeout,
         )
-        return _extract_deepseek_text(response)
+        try:
+            return _extract_deepseek_text(response)
+        except AiError as exc:
+            if not _is_empty_deepseek_message(response):
+                raise
+
+            retry_body = _deepseek_body(
+                model=self.model,
+                prompt=prompt,
+                max_output_tokens=max(max_output_tokens, 1600),
+                thinking_enabled=False,
+            )
+            retry_response = self.transport(
+                f"{self.base_url}/chat/completions",
+                retry_body,
+                {"Authorization": f"Bearer {self.api_key}"},
+                self.timeout,
+            )
+            try:
+                return _extract_deepseek_text(retry_response)
+            except AiError as retry_exc:
+                raise AiError(
+                    f"{retry_exc}; non-thinking retry also failed; "
+                    f"first_response=({_deepseek_diagnostics(response)}); "
+                    f"retry_response=({_deepseek_diagnostics(retry_response)})"
+                ) from retry_exc
 
 
 def build_ai_prompt(assessment: NicheAssessment) -> str:
@@ -404,8 +424,65 @@ def _extract_deepseek_text(response: dict[str, Any]) -> str:
         raise AiError("DeepSeek returned invalid message")
     text = message.get("content")
     if not isinstance(text, str) or not text.strip():
-        raise AiError("DeepSeek returned empty message")
+        raise AiError(f"DeepSeek returned empty message ({_deepseek_diagnostics(response)})")
     return _clean_ai_text(text)
+
+
+def _deepseek_body(
+    *,
+    model: str,
+    prompt: str,
+    max_output_tokens: int,
+    thinking_enabled: bool,
+) -> dict[str, Any]:
+    body: dict[str, Any] = {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": AI_SYSTEM_INSTRUCTIONS},
+            {"role": "user", "content": prompt},
+        ],
+        "thinking": {"type": "enabled" if thinking_enabled else "disabled"},
+        "stream": False,
+        "max_tokens": max_output_tokens,
+    }
+    if thinking_enabled:
+        body["reasoning_effort"] = "high"
+    return body
+
+
+def _is_empty_deepseek_message(response: dict[str, Any]) -> bool:
+    message = _first_deepseek_message(response)
+    if not isinstance(message, dict):
+        return False
+    text = message.get("content")
+    return not isinstance(text, str) or not text.strip()
+
+
+def _deepseek_diagnostics(response: dict[str, Any]) -> str:
+    choices = response.get("choices")
+    first_choice = choices[0] if isinstance(choices, list) and choices else None
+    message = first_choice.get("message") if isinstance(first_choice, dict) else None
+    finish_reason = first_choice.get("finish_reason") if isinstance(first_choice, dict) else None
+    reasoning_content = message.get("reasoning_content") if isinstance(message, dict) else None
+    tool_calls = message.get("tool_calls") if isinstance(message, dict) else None
+    content = message.get("content") if isinstance(message, dict) else None
+    content_length = len(content.strip()) if isinstance(content, str) else 0
+    return (
+        f"finish_reason={finish_reason}; "
+        f"content_length={content_length}; "
+        f"reasoning_content_present={bool(reasoning_content)}; "
+        f"tool_calls_present={bool(tool_calls)}"
+    )
+
+
+def _first_deepseek_message(response: dict[str, Any]) -> Any:
+    choices = response.get("choices")
+    if not isinstance(choices, list) or not choices:
+        return None
+    first_choice = choices[0]
+    if not isinstance(first_choice, dict):
+        return None
+    return first_choice.get("message")
 
 
 def _supports_openai_reasoning(model: str) -> bool:
