@@ -1,9 +1,12 @@
 from brainshtorm.models import DirectionInput, MarketMetrics
 from brainshtorm.project_types import (
+    AI_PROJECT_TYPE_SOURCE,
     AUTO_PROJECT_TYPE,
     estimate_launch_budget,
     project_type_label,
+    rank_project_type_candidates,
     resolve_project_type,
+    resolve_project_type_choice,
 )
 
 
@@ -67,6 +70,62 @@ def test_auto_project_type_selects_leadgen_for_repair_service_theme():
 
     assert decision.direction.project_type == "leadgen"
     assert "Лидогенерация" in project_type_label(decision.direction.project_type)
+
+
+def test_rank_project_type_candidates_exposes_scores_and_reasons():
+    candidates = rank_project_type_candidates(
+        make_direction("ремонт роботов пылесосов"),
+        make_metrics(commercial_intent=0.82, competition=0.42, estimated_difficulty=5),
+    )
+
+    assert candidates[0].project_type == "leadgen"
+    assert candidates[0].score > candidates[1].score
+    assert any("service_terms" in reason for reason in candidates[0].reasons)
+
+
+def test_auto_project_type_evidence_contains_candidate_scores_and_confidence():
+    decision = resolve_project_type(
+        make_direction("ремонт роботов пылесосов"),
+        make_metrics(commercial_intent=0.82, competition=0.42, estimated_difficulty=5),
+    )
+
+    assert decision.evidence is not None
+    details = "; ".join(decision.evidence.details)
+    assert "candidate_scores=" in details
+    assert "selection_confidence=" in details
+    assert "winner_margin=" in details
+
+
+def test_ai_project_type_choice_overrides_auto_with_evidence():
+    decision = resolve_project_type_choice(
+        make_direction("ремонт роботов пылесосов"),
+        make_metrics(commercial_intent=0.82, competition=0.42, estimated_difficulty=5),
+        project_type="service",
+        source=AI_PROJECT_TYPE_SOURCE,
+        rationale="AI считает, что лучше запускать собственную услугу, а не лидген.",
+        confidence=0.64,
+    )
+
+    assert decision.direction.project_type == "service"
+    assert decision.evidence is not None
+    assert decision.evidence.source == AI_PROJECT_TYPE_SOURCE
+    assert "ai_confidence=0.64" in decision.evidence.details
+    assert "local_candidate_scores=" in "; ".join(decision.evidence.details)
+
+
+def test_invalid_ai_project_type_choice_falls_back_to_local_choice():
+    decision = resolve_project_type_choice(
+        make_direction("ремонт роботов пылесосов"),
+        make_metrics(commercial_intent=0.82, competition=0.42, estimated_difficulty=5),
+        project_type="blog",
+        source=AI_PROJECT_TYPE_SOURCE,
+        rationale="invalid",
+        confidence=0.9,
+    )
+
+    assert decision.direction.project_type == "leadgen"
+    assert decision.evidence is not None
+    assert decision.evidence.source == "Project type inference"
 
 
 def test_auto_project_type_selects_infoproduct_for_learning_theme():

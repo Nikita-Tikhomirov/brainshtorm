@@ -3,11 +3,16 @@ from __future__ import annotations
 import json
 import urllib.error
 import urllib.request
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from typing import Any, Callable, Protocol
 
-from brainshtorm.models import NicheAssessment
-from brainshtorm.project_types import project_type_label
+from brainshtorm.models import DirectionInput, MarketMetrics, NicheAssessment
+from brainshtorm.project_types import (
+    PROJECT_TYPE_LABELS,
+    VALID_PROJECT_TYPES,
+    project_type_label,
+    rank_project_type_candidates,
+)
 
 
 AiTransport = Callable[[str, dict[str, Any], dict[str, str], int], dict[str, Any]]
@@ -19,12 +24,20 @@ AI_SYSTEM_INSTRUCTIONS = (
 
 
 class AiClient(Protocol):
-    def generate(self, prompt: str) -> str:
+    def generate(self, prompt: str, *, max_output_tokens: int = 900) -> str:
         """Generate a text answer for one prompt."""
 
 
 class AiError(RuntimeError):
     pass
+
+
+@dataclass(frozen=True)
+class ProjectTypeChoice:
+    direction_id: int
+    project_type: str
+    confidence: float
+    rationale: str
 
 
 class OpenAiClient:
@@ -47,12 +60,12 @@ class OpenAiClient:
         self.timeout = timeout
         self.transport = transport or _urllib_transport
 
-    def generate(self, prompt: str) -> str:
+    def generate(self, prompt: str, *, max_output_tokens: int = 900) -> str:
         body: dict[str, Any] = {
             "model": self.model,
             "instructions": AI_SYSTEM_INSTRUCTIONS,
             "input": prompt,
-            "max_output_tokens": 900,
+            "max_output_tokens": max_output_tokens,
         }
         if _supports_openai_reasoning(self.model):
             body["reasoning"] = {"effort": "medium"}
@@ -86,7 +99,7 @@ class DeepSeekClient:
         self.timeout = timeout
         self.transport = transport or _urllib_transport
 
-    def generate(self, prompt: str) -> str:
+    def generate(self, prompt: str, *, max_output_tokens: int = 900) -> str:
         body: dict[str, Any] = {
             "model": self.model,
             "messages": [
@@ -96,7 +109,7 @@ class DeepSeekClient:
             "thinking": {"type": "enabled"},
             "reasoning_effort": "high",
             "stream": False,
-            "max_tokens": 900,
+            "max_tokens": max_output_tokens,
         }
         response = self.transport(
             f"{self.base_url}/chat/completions",
@@ -238,6 +251,88 @@ def build_ai_prompt(assessment: NicheAssessment) -> str:
     )
 
 
+def build_project_type_prompt(items: list[tuple[DirectionInput, MarketMetrics]]) -> str:
+    directions: list[str] = []
+    for index, (direction, metrics) in enumerate(items):
+        candidates = rank_project_type_candidates(direction, metrics)
+        candidate_text = "; ".join(
+            f"{candidate.project_type}:{candidate.score:.1f}"
+            f" ({', '.join(candidate.reasons[:3])})"
+            for candidate in candidates[:4]
+        )
+        directions.extend(
+            [
+                f"- id: {index}",
+                f"  direction: {direction.direction}",
+                f"  region: {direction.region}",
+                f"  budget_rub: {direction.budget_rub}",
+                f"  max_difficulty: {direction.max_difficulty}",
+                f"  demand: {metrics.demand}",
+                f"  trend: {metrics.trend}",
+                f"  commercial_intent: {metrics.commercial_intent}",
+                f"  competition: {metrics.competition}",
+                f"  estimated_difficulty: {metrics.estimated_difficulty}/10",
+                f"  risk_level: {metrics.risk_level}",
+                f"  local_candidates: {candidate_text}",
+            ]
+        )
+
+    allowed = ", ".join(
+        f"{project_type}={PROJECT_TYPE_LABELS[project_type]}"
+        for project_type in sorted(VALID_PROJECT_TYPES)
+    )
+    return "\n".join(
+        [
+            "Выбери лучший тип проекта для каждой ниши Рунета.",
+            "Не придумывай новые типы проекта и не добавляй факты вне входных метрик.",
+            f"allowed_project_types: {allowed}",
+            "Верни только JSON-массив без пояснений вне JSON.",
+            "Формат каждого объекта:",
+            '{"id": 0, "project_type": "seo_site", "confidence": 0.62, "rationale": "короткая причина"}',
+            "",
+            "directions:",
+            *directions,
+        ]
+    )
+
+
+def generate_project_type_choices(
+    items: list[tuple[DirectionInput, MarketMetrics]],
+    client: AiClient,
+) -> dict[int, ProjectTypeChoice]:
+    prompt = build_project_type_prompt(items)
+    max_output_tokens = max(900, min(6000, 140 * max(1, len(items))))
+    return parse_project_type_choices(
+        client.generate(prompt, max_output_tokens=max_output_tokens)
+    )
+
+
+def parse_project_type_choices(text: str) -> dict[int, ProjectTypeChoice]:
+    try:
+        payload = json.loads(_json_payload(text))
+    except json.JSONDecodeError as exc:
+        raise AiError("AI project type response is not valid JSON") from exc
+
+    if not isinstance(payload, list):
+        raise AiError("AI project type response must be a JSON array")
+
+    choices: dict[int, ProjectTypeChoice] = {}
+    for item in payload:
+        if not isinstance(item, dict):
+            continue
+        direction_id = _int_value(item.get("id"))
+        project_type = item.get("project_type")
+        if direction_id is None or project_type not in VALID_PROJECT_TYPES:
+            continue
+        choices[direction_id] = ProjectTypeChoice(
+            direction_id=direction_id,
+            project_type=project_type,
+            confidence=_clamp_float(_float_value(item.get("confidence")), 0.0, 1.0),
+            rationale=_clean_ai_text(str(item.get("rationale") or "")),
+        )
+    return choices
+
+
 def generate_ai_insight(assessment: NicheAssessment, client: AiClient) -> str:
     return _clean_ai_text(client.generate(build_ai_prompt(assessment)))
 
@@ -320,3 +415,33 @@ def _supports_openai_reasoning(model: str) -> bool:
 
 def _clean_ai_text(text: str) -> str:
     return "\n".join(line.rstrip() for line in text.strip().splitlines()).strip()
+
+
+def _json_payload(text: str) -> str:
+    stripped = text.strip()
+    if stripped.startswith("```"):
+        lines = stripped.splitlines()
+        if lines and lines[0].startswith("```"):
+            lines = lines[1:]
+        if lines and lines[-1].strip().startswith("```"):
+            lines = lines[:-1]
+        stripped = "\n".join(lines).strip()
+    return stripped
+
+
+def _int_value(value: Any) -> int | None:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _float_value(value: Any) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _clamp_float(value: float, minimum: float, maximum: float) -> float:
+    return round(max(minimum, min(maximum, value)), 2)

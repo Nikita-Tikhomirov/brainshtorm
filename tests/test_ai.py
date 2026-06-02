@@ -5,7 +5,9 @@ from brainshtorm.ai import (
     OpenAiClient,
     apply_ai_insight,
     build_ai_prompt,
+    build_project_type_prompt,
     generate_ai_insight,
+    parse_project_type_choices,
 )
 from brainshtorm.models import (
     DirectionInput,
@@ -199,7 +201,26 @@ def test_openai_client_posts_responses_request_and_returns_output_text():
     assert calls[0][0] == "https://api.openai.com/v1/responses"
     assert calls[0][1]["model"] == "gpt-5.5"
     assert calls[0][1]["input"] == "prompt"
+    assert calls[0][1]["max_output_tokens"] == 900
     assert calls[0][2]["Authorization"] == "Bearer openai-secret"
+
+
+def test_openai_client_allows_custom_max_output_tokens():
+    calls = []
+
+    def transport(url, body, headers, timeout):
+        calls.append((url, body, headers, timeout))
+        return {"output_text": "[]"}
+
+    client = OpenAiClient(
+        api_key="openai-secret",
+        model="gpt-5.5",
+        transport=transport,
+    )
+
+    client.generate("prompt", max_output_tokens=2400)
+
+    assert calls[0][1]["max_output_tokens"] == 2400
 
 
 def test_deepseek_client_posts_chat_completion_request_and_returns_message():
@@ -224,9 +245,48 @@ def test_deepseek_client_posts_chat_completion_request_and_returns_message():
     assert result == "Продукт: каталог подрядчиков."
     assert calls[0][0] == "https://api.deepseek.com/chat/completions"
     assert calls[0][1]["model"] == "deepseek-v4-pro"
+    assert calls[0][1]["max_tokens"] == 900
     assert calls[0][1]["messages"][1]["content"] == "prompt"
     assert calls[0][1]["thinking"] == {"type": "enabled"}
     assert calls[0][2]["Authorization"] == "Bearer deepseek-secret"
+
+
+def test_build_project_type_prompt_contains_allowed_types_and_candidates():
+    direction = DirectionInput("ремонт роботов пылесосов", "Россия", 150000, 6, "auto")
+    metrics = MarketMetrics(8500, 0.2, 1.0, 0.82, 0.42, 999999, 5, 0.2, 0.1)
+
+    prompt = build_project_type_prompt([(direction, metrics)])
+
+    assert "allowed_project_types" in prompt
+    assert "leadgen" in prompt
+    assert "local_candidates" in prompt
+    assert "ремонт роботов пылесосов" in prompt
+    assert "JSON" in prompt
+
+
+def test_parse_project_type_choices_accepts_plain_or_fenced_json():
+    choices = parse_project_type_choices(
+        """
+        ```json
+        [
+          {"id": 0, "project_type": "leadgen", "confidence": 0.72, "rationale": "service demand"}
+        ]
+        ```
+        """
+    )
+
+    assert choices[0].direction_id == 0
+    assert choices[0].project_type == "leadgen"
+    assert choices[0].confidence == 0.72
+    assert choices[0].rationale == "service demand"
+
+
+def test_parse_project_type_choices_ignores_invalid_types():
+    choices = parse_project_type_choices(
+        '[{"id": 0, "project_type": "blog", "confidence": 0.9, "rationale": "bad"}]'
+    )
+
+    assert choices == {}
 
 
 def test_generate_ai_insight_uses_assessment_prompt():

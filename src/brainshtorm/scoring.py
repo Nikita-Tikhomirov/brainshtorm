@@ -12,6 +12,7 @@ from brainshtorm.models import (
     TAKE,
 )
 from brainshtorm.project_types import resolve_project_type
+from brainshtorm.project_types import ProjectTypeDecision
 
 
 SCORE_FORMULA_VERSION = "score-v2-strict-evidence"
@@ -19,6 +20,10 @@ SCORE_FORMULA_VERSION = "score-v2-strict-evidence"
 
 def score_direction(direction: DirectionInput, metrics: MarketMetrics) -> NicheAssessment:
     project_type_decision = resolve_project_type(direction, metrics)
+    return score_project_type_decision(project_type_decision)
+
+
+def score_project_type_decision(project_type_decision: ProjectTypeDecision) -> NicheAssessment:
     direction = project_type_decision.direction
     metrics = project_type_decision.metrics
     breakdown = build_score_breakdown(direction, metrics)

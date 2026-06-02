@@ -5,15 +5,28 @@ import io
 
 import streamlit as st
 
-from brainshtorm.ai import AiError, DeepSeekClient, OpenAiClient, apply_ai_insight, generate_ai_insight
+from brainshtorm.ai import (
+    AiError,
+    DeepSeekClient,
+    OpenAiClient,
+    apply_ai_insight,
+    generate_ai_insight,
+    generate_project_type_choices,
+)
 from brainshtorm.app_inputs import parse_pasted_directions
 from brainshtorm.keywords import attach_cluster_serp
 from brainshtorm.models import NicheAssessment
 from brainshtorm.opportunity import apply_product_recommendation
-from brainshtorm.project_types import PROJECT_TYPE_OPTIONS, project_type_label
+from brainshtorm.project_types import (
+    AI_PROJECT_TYPE_SOURCE,
+    AUTO_PROJECT_TYPE,
+    PROJECT_TYPE_OPTIONS,
+    project_type_label,
+    resolve_project_type_choice,
+)
 from brainshtorm.providers import DemoMarketDataProvider
 from brainshtorm.reporting import render_markdown_report
-from brainshtorm.scoring import score_direction
+from brainshtorm.scoring import score_direction, score_project_type_decision
 from brainshtorm.serp import (
     DemoSerpProvider,
     YandexSerpClient,
@@ -143,6 +156,10 @@ def run_app() -> None:
             _clamp(settings.keyword_clusters, 1, 8),
         )
         st.header("AI-вердикт")
+        enable_ai_project_type = st.checkbox(
+            "Уточнять авто-тип проекта через AI",
+            value=settings.enable_ai_project_type,
+        )
         enable_ai = st.checkbox(
             "Генерировать AI-вердикт финалистов",
             value=settings.enable_ai,
@@ -199,6 +216,7 @@ def run_app() -> None:
         serp_results=int(serp_results),
         enable_cluster_serp=enable_cluster_serp,
         keyword_clusters=int(keyword_clusters),
+        enable_ai_project_type=enable_ai_project_type,
         enable_ai=enable_ai,
         ai_provider=ai_provider,
         openai_api_key=openai_api_key,
@@ -245,6 +263,7 @@ def run_app() -> None:
             serp_results=int(serp_results),
             enable_cluster_serp=enable_cluster_serp,
             keyword_clusters=int(keyword_clusters),
+            enable_ai_project_type=enable_ai_project_type,
             enable_ai=enable_ai,
             ai_provider=ai_provider,
             openai_api_key=openai_api_key,
@@ -274,6 +293,7 @@ def _run_analysis(
     serp_results: int,
     enable_cluster_serp: bool,
     keyword_clusters: int,
+    enable_ai_project_type: bool,
     enable_ai: bool,
     ai_provider: str,
     openai_api_key: str,
@@ -294,10 +314,27 @@ def _run_analysis(
         )
 
     progress = st.progress(0)
-    assessments: list[NicheAssessment] = []
+    raw_items = []
     for index, direction in enumerate(directions, start=1):
-        assessments.append(score_direction(direction, provider.metrics_for(direction)))
+        raw_items.append((direction, provider.metrics_for(direction)))
         progress.progress(index / len(directions))
+    ai_project_type_choices = {}
+    if enable_ai_project_type and any(
+        direction.project_type == AUTO_PROJECT_TYPE for direction, _metrics in raw_items
+    ):
+        try:
+            ai_client = _build_ai_client(
+                provider=ai_provider,
+                openai_api_key=openai_api_key,
+                deepseek_api_key=deepseek_api_key,
+                openai_model=openai_model,
+                deepseek_model=deepseek_model,
+            )
+            ai_project_type_choices = generate_project_type_choices(raw_items, ai_client)
+        except (AiError, ValueError, TypeError) as exc:
+            st.warning(f"AI-выбор типа проекта не сработал, использован локальный выбор: {exc}")
+
+    assessments = _score_raw_items(raw_items, ai_project_type_choices)
     ranked = sorted(assessments, key=lambda item: item.score, reverse=True)
 
     if enable_serp:
@@ -328,6 +365,25 @@ def _run_analysis(
         )
 
     return ranked
+
+
+def _score_raw_items(raw_items, ai_project_type_choices) -> list[NicheAssessment]:
+    assessments: list[NicheAssessment] = []
+    for index, (direction, metrics) in enumerate(raw_items):
+        choice = ai_project_type_choices.get(index)
+        if choice:
+            decision = resolve_project_type_choice(
+                direction,
+                metrics,
+                project_type=choice.project_type,
+                source=AI_PROJECT_TYPE_SOURCE,
+                rationale=choice.rationale,
+                confidence=choice.confidence,
+            )
+            assessments.append(score_project_type_decision(decision))
+            continue
+        assessments.append(score_direction(direction, metrics))
+    return assessments
 
 
 def _apply_serp_to_finalists(

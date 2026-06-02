@@ -30,6 +30,7 @@ class AppSettings:
     serp_results: int = 10
     enable_cluster_serp: bool = False
     keyword_clusters: int = 4
+    enable_ai_project_type: bool = False
     enable_ai: bool = False
     ai_provider: str = "GPT"
     openai_api_key: str = ""
@@ -79,6 +80,7 @@ def load_settings(
         serp_results=_as_int(payload.get("serp_results"), defaults.serp_results),
         enable_cluster_serp=_as_bool(payload.get("enable_cluster_serp"), defaults.enable_cluster_serp),
         keyword_clusters=_as_int(payload.get("keyword_clusters"), defaults.keyword_clusters),
+        enable_ai_project_type=_as_bool(payload.get("enable_ai_project_type"), defaults.enable_ai_project_type),
         enable_ai=_as_bool(payload.get("enable_ai"), defaults.enable_ai),
         ai_provider=_as_str(payload.get("ai_provider"), defaults.ai_provider),
         openai_api_key=unprotect(_as_str(payload.get("openai_api_key"), "")),
