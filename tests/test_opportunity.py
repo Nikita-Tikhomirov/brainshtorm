@@ -103,6 +103,17 @@ def test_build_product_recommendation_returns_actionable_launch_card():
     assert any("Offer gap SERP" in item for item in recommendation.evidence)
     assert "ручн" not in " ".join(recommendation.evidence + recommendation.risks).lower()
     assert recommendation.first_test
+    assert any(factor.key == "offer_gap_bonus" for factor in recommendation.opportunity_factors)
+
+
+def test_opportunity_score_is_explained_by_factor_contributions():
+    recommendation = build_product_recommendation(make_assessment())
+
+    contribution_total = round(sum(factor.contribution for factor in recommendation.opportunity_factors), 1)
+
+    assert contribution_total == recommendation.opportunity_score
+    assert any(factor.key == "base_score" for factor in recommendation.opportunity_factors)
+    assert any(factor.key == "weak_cluster_bonus" for factor in recommendation.opportunity_factors)
 
 
 def test_apply_product_recommendation_attaches_card_without_changing_metrics():

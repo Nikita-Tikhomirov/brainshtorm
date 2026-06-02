@@ -14,6 +14,7 @@ from brainshtorm.models import (
     SerpResult,
     TAKE,
 )
+from brainshtorm.scoring import score_direction
 
 
 def make_assessment() -> NicheAssessment:
@@ -95,6 +96,37 @@ def test_build_ai_prompt_contains_metrics_serp_and_output_contract():
     assert "Лидогенератор ремонта роботов пылесосов" in prompt
     assert "offer_gap: 0.55" in prompt
     assert "missing_offer_signals: гарантия" in prompt
+
+
+def test_build_ai_prompt_contains_strict_evidence_contract():
+    direction = DirectionInput(
+        direction="ремонт роботов пылесосов",
+        region="Москва",
+        budget_rub=150000,
+        max_difficulty=6,
+        project_type="leadgen",
+    )
+    assessment = score_direction(
+        direction,
+        MarketMetrics(
+            demand=9000,
+            trend=0.4,
+            regional_affinity=1.2,
+            commercial_intent=0.85,
+            competition=0.45,
+            estimated_launch_budget=125000,
+            estimated_difficulty=4,
+            seasonality=0.2,
+            risk_level=0.0,
+        ),
+    )
+
+    prompt = build_ai_prompt(assessment)
+
+    assert "Не придумывай факты" in prompt
+    assert "strict_evidence:" in prompt
+    assert "Wordstat | Спрос | 9000" in prompt
+    assert "score_formula:" in prompt
 
 
 def test_openai_client_posts_responses_request_and_returns_output_text():

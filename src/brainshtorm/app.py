@@ -506,6 +506,8 @@ def _assessment_row(assessment: NicheAssessment) -> dict[str, object]:
         "direction": assessment.direction.direction,
         "score": assessment.score,
         "verdict": assessment.verdict,
+        "score_confidence": assessment.score_breakdown.confidence if assessment.score_breakdown else "",
+        "evidence_count": len(assessment.evidence_items),
         "opportunity_score": recommendation.opportunity_score if recommendation else "",
         "launch": recommendation.product_title if recommendation else "",
         "first_test": recommendation.first_test if recommendation else "",

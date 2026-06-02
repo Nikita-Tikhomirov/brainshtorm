@@ -110,6 +110,30 @@ def build_ai_prompt(assessment: NicheAssessment) -> str:
     direction = assessment.direction
     metrics = assessment.metrics
     serp = assessment.serp_analysis
+    score_lines = ["score_formula: нет данных"]
+    if assessment.score_breakdown:
+        breakdown = assessment.score_breakdown
+        score_lines = [
+            "score_formula:",
+            f"formula_version: {breakdown.formula_version}",
+            f"formula_final_score: {breakdown.final_score}",
+            f"formula_confidence: {breakdown.confidence}",
+            f"formula_confidence_notes: {'; '.join(breakdown.confidence_notes)}",
+        ]
+        score_lines.extend(
+            "- "
+            f"{factor.key}; raw={factor.raw_value}; normalized={factor.normalized_score}; "
+            f"weight={factor.weight}; contribution={factor.contribution}; evidence={factor.evidence}"
+            for factor in breakdown.factors
+        )
+    evidence_lines = ["strict_evidence: нет данных"]
+    if assessment.evidence_items:
+        evidence_lines = ["strict_evidence:"]
+        evidence_lines.extend(
+            "- "
+            f"{item.source} | {item.claim} | {item.value} | {'; '.join(item.details) or 'n/a'}"
+            for item in assessment.evidence_items
+        )
     serp_lines = [
         "SERP: нет данных",
     ]
@@ -164,11 +188,18 @@ def build_ai_prompt(assessment: NicheAssessment) -> str:
             f"first_test: {recommendation.first_test}",
             f"evidence: {'; '.join(recommendation.evidence)}",
             f"recommendation_risks: {'; '.join(recommendation.risks)}",
+            "opportunity_formula: "
+            + "; ".join(
+                f"{factor.key} raw={factor.raw_value} contribution={factor.contribution} evidence={factor.evidence}"
+                for factor in recommendation.opportunity_factors
+            ),
         ]
 
     return "\n".join(
         [
             "Нужно дать короткий практический вердикт по нише на основе метрик.",
+            "Не придумывай факты, запросы, частотность, домены, риски или выводы, которых нет в strict_evidence, SERP, keyword_clusters или score_formula.",
+            "Если данных для вывода нет, прямо напиши: нет данных.",
             "Ответь на русском, без воды, в таком формате:",
             "Вердикт: ...",
             "Продукт: ...",
@@ -190,6 +221,8 @@ def build_ai_prompt(assessment: NicheAssessment) -> str:
             f"commercial_intent: {metrics.commercial_intent}",
             f"estimated_budget: {metrics.estimated_launch_budget}",
             f"estimated_difficulty: {metrics.estimated_difficulty}/10",
+            *score_lines,
+            *evidence_lines,
             *serp_lines,
             *cluster_lines,
             *recommendation_lines,

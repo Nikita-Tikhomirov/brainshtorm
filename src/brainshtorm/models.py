@@ -87,6 +87,35 @@ class ProductRecommendation:
     first_test: str
     evidence: list[str]
     risks: list[str]
+    opportunity_factors: list["ScoreFactor"] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class EvidenceItem:
+    source: str
+    claim: str
+    value: str
+    details: list[str] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class ScoreFactor:
+    key: str
+    label: str
+    raw_value: str
+    normalized_score: float
+    weight: float
+    contribution: float
+    evidence: str
+
+
+@dataclass(frozen=True)
+class ScoreBreakdown:
+    formula_version: str
+    factors: list[ScoreFactor]
+    final_score: float
+    confidence: float
+    confidence_notes: list[str] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -99,6 +128,8 @@ class NicheAssessment:
     product_idea: str
     promotion_steps: list[str]
     risks: list[str]
+    score_breakdown: ScoreBreakdown | None = None
+    evidence_items: list[EvidenceItem] = field(default_factory=list)
     serp_analysis: SerpAnalysis | None = None
     keyword_clusters: list[KeywordCluster] = field(default_factory=list)
     product_recommendation: ProductRecommendation | None = None

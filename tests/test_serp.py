@@ -177,6 +177,50 @@ def test_apply_serp_analysis_adjusts_assessment_verdict_and_risks():
     assert adjusted.score < assessment.score
     assert adjusted.verdict == REVIEW
     assert any("SERP" in risk for risk in adjusted.risks)
+    assert any(item.source == "Yandex SERP" and item.claim == "Seed SERP" for item in adjusted.evidence_items)
+
+
+def test_apply_serp_analysis_adds_score_adjustment_to_breakdown():
+    direction = DirectionInput(
+        direction="ремонт роботов пылесосов",
+        region="Москва",
+        budget_rub=150000,
+        max_difficulty=6,
+        project_type="leadgen",
+    )
+    assessment = NicheAssessment(
+        direction=direction,
+        metrics=MarketMetrics(
+            demand=9000,
+            trend=0.4,
+            regional_affinity=1.1,
+            commercial_intent=0.8,
+            competition=0.45,
+            estimated_launch_budget=125000,
+            estimated_difficulty=4,
+            seasonality=0.2,
+            risk_level=0.0,
+        ),
+        score=76.0,
+        verdict=TAKE,
+        explanation="ok",
+        product_idea="leadgen",
+        promotion_steps=["step"],
+        risks=[],
+    )
+    analysis = analyze_serp_results(
+        query=direction.direction,
+        results=parse_yandex_xml_results(SERP_XML),
+        max_difficulty=direction.max_difficulty,
+    )
+
+    adjusted = apply_serp_analysis(assessment, analysis)
+    breakdown = adjusted.score_breakdown
+
+    assert breakdown is not None
+    assert breakdown.final_score == adjusted.score
+    assert any(factor.key == "seed_serp_delta" for factor in breakdown.factors)
+    assert breakdown.confidence >= 0.7
 
 
 def test_apply_keyword_cluster_serp_analysis_attaches_clusters_and_adjusts_score():

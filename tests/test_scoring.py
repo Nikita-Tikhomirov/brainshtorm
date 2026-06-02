@@ -27,6 +27,41 @@ def test_high_quality_direction_gets_take_verdict():
     assert result.verdict == "take"
     assert result.score >= 75
     assert "лидогенератор" in result.product_idea
+    assert result.score_breakdown is not None
+    assert result.score_breakdown.formula_version
+    assert result.score_breakdown.final_score == result.score
+    assert any(factor.key == "demand" and factor.raw_value == "8500" for factor in result.score_breakdown.factors)
+    assert any(item.source == "Wordstat" and item.claim == "Спрос" for item in result.evidence_items)
+
+
+def test_score_breakdown_contributions_match_final_score():
+    direction = DirectionInput(
+        direction="ремонт роботов пылесосов",
+        region="Москва",
+        budget_rub=150000,
+        max_difficulty=6,
+        project_type="leadgen",
+    )
+    metrics = MarketMetrics(
+        demand=8500,
+        trend=0.28,
+        regional_affinity=1.25,
+        commercial_intent=0.85,
+        competition=0.35,
+        estimated_launch_budget=110000,
+        estimated_difficulty=5,
+        seasonality=0.2,
+        risk_level=0.1,
+    )
+
+    result = score_direction(direction, metrics)
+    breakdown = result.score_breakdown
+
+    assert breakdown is not None
+    contribution_total = round(sum(factor.contribution for factor in breakdown.factors), 1)
+    assert contribution_total == result.score
+    assert breakdown.confidence < 0.7
+    assert any("SERP" in note for note in breakdown.confidence_notes)
 
 
 def test_expensive_and_competitive_direction_gets_skip_verdict():

@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Iterator
 from dataclasses import replace
 
-from brainshtorm.models import KeywordCluster, NicheAssessment, ProductRecommendation, SerpAnalysis
+from brainshtorm.models import KeywordCluster, NicheAssessment, ProductRecommendation, ScoreFactor, SerpAnalysis
 
 
 LAUNCH_TYPES = {
@@ -21,7 +21,8 @@ def build_product_recommendation(assessment: NicheAssessment) -> ProductRecommen
     launch_type = LAUNCH_TYPES.get(direction.project_type, "Нишевой проект")
     weak_clusters = _weak_clusters(assessment)
     page_clusters = weak_clusters or _best_clusters(assessment)
-    opportunity_score = _opportunity_score(assessment, weak_clusters)
+    opportunity_factors = _opportunity_factors(assessment, weak_clusters)
+    opportunity_score = _opportunity_score(opportunity_factors)
 
     return ProductRecommendation(
         product_title=f"{launch_type}: {direction.direction}",
@@ -35,6 +36,7 @@ def build_product_recommendation(assessment: NicheAssessment) -> ProductRecommen
         first_test=_first_test(assessment, page_clusters),
         evidence=_evidence(assessment, weak_clusters),
         risks=_recommendation_risks(assessment),
+        opportunity_factors=opportunity_factors,
     )
 
 
@@ -70,22 +72,99 @@ def _best_clusters(assessment: NicheAssessment) -> list[KeywordCluster]:
     )[:3]
 
 
-def _opportunity_score(assessment: NicheAssessment, weak_clusters: list[KeywordCluster]) -> float:
+def _opportunity_factors(assessment: NicheAssessment, weak_clusters: list[KeywordCluster]) -> list[ScoreFactor]:
     metrics = assessment.metrics
     cluster_bonus = min(12.0, len(weak_clusters) * 4.0)
     offer_gap_bonus = min(8.0, _average_usable_offer_gap(assessment) * 8.0)
     budget_bonus = 6.0 if metrics.estimated_launch_budget <= assessment.direction.budget_rub else -8.0
     demand_bonus = min(8.0, metrics.demand / 2500)
-    risk_penalty = metrics.risk_level * 15 + metrics.seasonality * 4
-    return round(
-        max(
-            0.0,
-            min(
-                100.0,
-                assessment.score + cluster_bonus + offer_gap_bonus + budget_bonus + demand_bonus - risk_penalty,
-            ),
+    factors = [
+        _opportunity_factor(
+            key="base_score",
+            label="Базовый score",
+            raw_value=f"{assessment.score:.1f}",
+            contribution=assessment.score,
+            evidence="Final score after Wordstat/SERP adjustments.",
         ),
-        1,
+        _opportunity_factor(
+            key="weak_cluster_bonus",
+            label="Слабые кластеры",
+            raw_value=str(len(weak_clusters)),
+            contribution=cluster_bonus,
+            evidence="Commercial clusters with SERP difficulty within user limit.",
+        ),
+        _opportunity_factor(
+            key="offer_gap_bonus",
+            label="Зазор в офферах",
+            raw_value=f"{_average_usable_offer_gap(assessment):.2f}",
+            contribution=offer_gap_bonus,
+            evidence="Average offer_gap for usable SERP analyses.",
+        ),
+        _opportunity_factor(
+            key="budget_bonus",
+            label="Бюджет",
+            raw_value=f"{metrics.estimated_launch_budget}/{assessment.direction.budget_rub}",
+            contribution=budget_bonus,
+            evidence="Launch budget fits user limit: +6, otherwise -8.",
+        ),
+        _opportunity_factor(
+            key="demand_bonus",
+            label="Спрос",
+            raw_value=str(metrics.demand),
+            contribution=demand_bonus,
+            evidence="Demand / 2500, capped at +8.",
+        ),
+        _opportunity_factor(
+            key="risk_penalty",
+            label="Риск",
+            raw_value=f"{metrics.risk_level:.2f}",
+            contribution=-(metrics.risk_level * 15),
+            evidence="risk_level * -15.",
+        ),
+        _opportunity_factor(
+            key="seasonality_penalty",
+            label="Сезонность",
+            raw_value=f"{metrics.seasonality:.2f}",
+            contribution=-(metrics.seasonality * 4),
+            evidence="seasonality * -4.",
+        ),
+    ]
+    raw_total = round(sum(factor.contribution for factor in factors), 1)
+    clamped_total = _opportunity_score(factors)
+    if raw_total == clamped_total:
+        return factors
+    return [
+        *factors,
+        _opportunity_factor(
+            key="clamp_adjustment",
+            label="Ограничение 0-100",
+            raw_value=f"{raw_total:.1f}",
+            contribution=round(clamped_total - raw_total, 1),
+            evidence="Opportunity score is clamped to 0..100.",
+        ),
+    ]
+
+
+def _opportunity_score(factors: list[ScoreFactor]) -> float:
+    return round(max(0.0, min(100.0, sum(factor.contribution for factor in factors))), 1)
+
+
+def _opportunity_factor(
+    *,
+    key: str,
+    label: str,
+    raw_value: str,
+    contribution: float,
+    evidence: str,
+) -> ScoreFactor:
+    return ScoreFactor(
+        key=key,
+        label=label,
+        raw_value=raw_value,
+        normalized_score=round(contribution, 1),
+        weight=1.0,
+        contribution=round(contribution, 4),
+        evidence=evidence,
     )
 
 

@@ -9,6 +9,7 @@ from brainshtorm.models import (
     SerpResult,
 )
 from brainshtorm.reporting import render_markdown_report
+from brainshtorm.scoring import score_direction
 
 
 def make_assessment() -> NicheAssessment:
@@ -172,6 +173,38 @@ def test_markdown_report_contains_ranked_verdicts():
     assert "ремонт роботов пылесосов" in report
     assert "take" in report
     assert "SEO-страницы по моделям" in report
+
+
+def test_markdown_report_contains_strict_evidence_and_score_formula():
+    direction = DirectionInput(
+        direction="ремонт роботов пылесосов",
+        region="Москва",
+        budget_rub=150000,
+        max_difficulty=6,
+        project_type="leadgen",
+    )
+    assessment = score_direction(
+        direction,
+        MarketMetrics(
+            demand=8500,
+            trend=0.28,
+            regional_affinity=1.25,
+            commercial_intent=0.85,
+            competition=0.35,
+            estimated_launch_budget=110000,
+            estimated_difficulty=5,
+            seasonality=0.2,
+            risk_level=0.1,
+        ),
+    )
+
+    report = render_markdown_report([assessment])
+
+    assert "Strict evidence" in report
+    assert "Score formula" in report
+    assert "demand" in report
+    assert "raw `8500`" in report
+    assert "Wordstat: Спрос" in report
 
 
 def test_markdown_report_contains_serp_details_when_available():

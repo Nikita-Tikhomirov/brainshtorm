@@ -43,6 +43,36 @@ def render_markdown_report(assessments: list[NicheAssessment]) -> str:
             ]
         )
         lines.extend(f"- {step}" for step in assessment.promotion_steps)
+        if assessment.score_breakdown or assessment.evidence_items:
+            lines.extend(["", "Strict evidence:", ""])
+            if assessment.score_breakdown:
+                breakdown = assessment.score_breakdown
+                lines.extend(
+                    [
+                        "Score formula:",
+                        "",
+                        f"- Formula: `{breakdown.formula_version}`",
+                        f"- Final score: `{breakdown.final_score:.1f}`",
+                        f"- Confidence: `{breakdown.confidence:.2f}`",
+                    ]
+                )
+                lines.extend(f"- Confidence note: {note}" for note in breakdown.confidence_notes)
+                lines.append("")
+                lines.extend(
+                    "- "
+                    f"{factor.key}: raw `{factor.raw_value}`; "
+                    f"normalized `{factor.normalized_score:.1f}`; "
+                    f"weight `{factor.weight:.2f}`; "
+                    f"contribution `{factor.contribution:+.1f}`; "
+                    f"evidence: {factor.evidence}"
+                    for factor in breakdown.factors
+                )
+            if assessment.evidence_items:
+                lines.extend(["", "Evidence ledger:", ""])
+                for item in assessment.evidence_items:
+                    detail_text = "; ".join(item.details)
+                    suffix = f" ({detail_text})" if detail_text else ""
+                    lines.append(f"- {item.source}: {item.claim} = `{item.value}`{suffix}")
         if assessment.product_recommendation:
             recommendation = assessment.product_recommendation
             lines.extend(
@@ -57,6 +87,23 @@ def render_markdown_report(assessments: list[NicheAssessment]) -> str:
                     f"- Offer: {recommendation.offer}",
                     f"- Why it can rank: {recommendation.why_this_can_rank}",
                     f"- First test: {recommendation.first_test}",
+                    "",
+                    "Opportunity formula:",
+                    "",
+                ]
+            )
+            if recommendation.opportunity_factors:
+                lines.extend(
+                    "- "
+                    f"{factor.key}: raw `{factor.raw_value}`; "
+                    f"contribution `{factor.contribution:+.1f}`; "
+                    f"evidence: {factor.evidence}"
+                    for factor in recommendation.opportunity_factors
+                )
+            else:
+                lines.append("- n/a")
+            lines.extend(
+                [
                     "",
                     "Landing pages:",
                     "",

@@ -12,7 +12,18 @@ from dataclasses import dataclass, replace
 from typing import Any, Callable
 
 from brainshtorm.keywords import summarize_cluster_serp
-from brainshtorm.models import DirectionInput, KeywordCluster, NicheAssessment, REVIEW, SerpAnalysis, SerpResult, SKIP, TAKE
+from brainshtorm.models import (
+    DirectionInput,
+    EvidenceItem,
+    KeywordCluster,
+    NicheAssessment,
+    REVIEW,
+    SerpAnalysis,
+    SerpResult,
+    SKIP,
+    TAKE,
+)
+from brainshtorm.scoring import add_score_adjustment, ensure_score_breakdown
 from brainshtorm.yandex_wordstat import BASE_URL
 
 
@@ -279,6 +290,7 @@ def analyze_serp_results(
 
 def apply_serp_analysis(assessment: NicheAssessment, analysis: SerpAnalysis) -> NicheAssessment:
     score = round(_clamp_float(assessment.score + analysis.score_delta), 1)
+    base_breakdown = ensure_score_breakdown(assessment)
     risks = list(assessment.risks)
     if analysis.estimated_difficulty > assessment.direction.max_difficulty:
         risks.append(
@@ -294,6 +306,18 @@ def apply_serp_analysis(assessment: NicheAssessment, analysis: SerpAnalysis) -> 
         explanation=f"{assessment.explanation} SERP: {analysis.summary}",
         risks=risks,
         serp_analysis=analysis,
+        score_breakdown=add_score_adjustment(
+            base_breakdown,
+            key="seed_serp_delta",
+            label="Seed SERP",
+            raw_value=f"{analysis.query}; difficulty {analysis.estimated_difficulty}/10; offer_gap {analysis.offer_gap_score:.2f}",
+            contribution=round(score - base_breakdown.final_score, 1),
+            evidence=f"Yandex SERP top domains: {', '.join(analysis.top_domains) or 'n/a'}",
+            final_score=score,
+            confidence_delta=0.15,
+            confidence_note="Seed SERP checked.",
+        ),
+        evidence_items=[*assessment.evidence_items, _serp_evidence(analysis, claim="Seed SERP")],
     )
 
 
@@ -312,6 +336,7 @@ def apply_keyword_cluster_serp_analysis(
     ) / len(checked_clusters)
     cluster_delta = round(_clamp_float(average_delta * 0.6, -12.0, 8.0), 1)
     score = round(_clamp_float(assessment.score + cluster_delta), 1)
+    base_breakdown = ensure_score_breakdown(assessment)
     risks = list(assessment.risks)
     average_difficulty = sum(
         cluster.serp_analysis.estimated_difficulty
@@ -333,6 +358,59 @@ def apply_keyword_cluster_serp_analysis(
         explanation=f"{assessment.explanation} Кластеры: {summarize_cluster_serp(clusters)}.",
         risks=risks,
         keyword_clusters=clusters,
+        score_breakdown=add_score_adjustment(
+            base_breakdown,
+            key="cluster_serp_delta",
+            label="Кластерный SERP",
+            raw_value=f"{len(checked_clusters)} clusters; average_delta {average_delta:.1f}",
+            contribution=round(score - base_breakdown.final_score, 1),
+            evidence="Yandex SERP by representative commercial cluster queries.",
+            final_score=score,
+            confidence_delta=0.15,
+            confidence_note="Commercial keyword clusters checked in SERP.",
+        ),
+        evidence_items=[
+            *assessment.evidence_items,
+            *[_cluster_serp_evidence(cluster) for cluster in checked_clusters if cluster.serp_analysis],
+        ],
+    )
+
+
+def _serp_evidence(analysis: SerpAnalysis, *, claim: str) -> EvidenceItem:
+    return EvidenceItem(
+        source="Yandex SERP",
+        claim=claim,
+        value=analysis.query,
+        details=[
+            f"difficulty={analysis.estimated_difficulty}/10",
+            f"score_delta={analysis.score_delta:.1f}",
+            f"offer_gap={analysis.offer_gap_score:.2f}",
+            f"top_domains={', '.join(analysis.top_domains) or 'n/a'}",
+            f"weak_spots={'; '.join(analysis.weak_spots) or 'n/a'}",
+        ],
+    )
+
+
+def _cluster_serp_evidence(cluster: KeywordCluster) -> EvidenceItem:
+    analysis = cluster.serp_analysis
+    if analysis is None:
+        return EvidenceItem(
+            source="Yandex SERP",
+            claim=f"Кластер {cluster.name}",
+            value=cluster.representative_query,
+            details=[f"demand={cluster.total_demand}", "SERP not checked"],
+        )
+    return EvidenceItem(
+        source="Yandex SERP",
+        claim=f"Кластер {cluster.name}",
+        value=cluster.representative_query,
+        details=[
+            f"demand={cluster.total_demand}",
+            f"difficulty={analysis.estimated_difficulty}/10",
+            f"score_delta={analysis.score_delta:.1f}",
+            f"offer_gap={analysis.offer_gap_score:.2f}",
+            f"top_domains={', '.join(analysis.top_domains) or 'n/a'}",
+        ],
     )
 
 
