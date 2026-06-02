@@ -23,7 +23,7 @@ class AppSettings:
     custom_region_id: str = ""
     budget_rub: int = 150000
     max_difficulty: int = 6
-    project_label: str = "Лидогенерация"
+    project_label: str = "Авто (сам выберет)"
     num_phrases: int = 50
     enable_serp: bool = False
     serp_finalists: int = 10

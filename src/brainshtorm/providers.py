@@ -3,6 +3,7 @@ from typing import Protocol
 
 from brainshtorm.keywords import build_keyword_clusters
 from brainshtorm.models import DirectionInput, KeywordCluster, MarketMetrics
+from brainshtorm.project_types import estimate_launch_budget
 
 
 class MarketDataProvider(Protocol):
@@ -26,7 +27,7 @@ class DemoMarketDataProvider:
         seasonality = round(((value >> 26) % 80) / 100, 2)
         risk_level = _estimate_risk(direction.direction)
         estimated_difficulty = max(1, min(10, round(competition * 10)))
-        estimated_launch_budget = _estimate_launch_budget(direction.project_type, estimated_difficulty)
+        estimated_launch_budget = estimate_launch_budget(direction.project_type, estimated_difficulty)
 
         return MarketMetrics(
             demand=demand,
@@ -68,16 +69,7 @@ def _stable_int(*parts: str) -> int:
 
 
 def _estimate_launch_budget(project_type: str, difficulty: int) -> int:
-    base_by_type = {
-        "seo_site": 90000,
-        "leadgen": 110000,
-        "service": 130000,
-        "telegram": 60000,
-        "infoproduct": 80000,
-        "marketplace": 250000,
-    }
-    base = base_by_type.get(project_type, 120000)
-    return base + difficulty * 15000
+    return estimate_launch_budget(project_type, difficulty)
 
 
 def _estimate_risk(direction: str) -> float:

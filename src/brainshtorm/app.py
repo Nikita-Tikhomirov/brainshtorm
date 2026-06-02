@@ -10,6 +10,7 @@ from brainshtorm.app_inputs import parse_pasted_directions
 from brainshtorm.keywords import attach_cluster_serp
 from brainshtorm.models import NicheAssessment
 from brainshtorm.opportunity import apply_product_recommendation
+from brainshtorm.project_types import PROJECT_TYPE_OPTIONS, project_type_label
 from brainshtorm.providers import DemoMarketDataProvider
 from brainshtorm.reporting import render_markdown_report
 from brainshtorm.scoring import score_direction
@@ -39,14 +40,7 @@ REGION_OPTIONS = {
 DEFAULT_SERP_REGION_ID = "225"
 
 
-PROJECT_TYPES = {
-    "SEO-сайт": "seo_site",
-    "Лидогенерация": "leadgen",
-    "Сервис/услуга": "service",
-    "Telegram-продукт": "telegram",
-    "Инфопродукт": "infoproduct",
-    "Маркетплейс/каталог": "marketplace",
-}
+PROJECT_TYPES = PROJECT_TYPE_OPTIONS
 
 AI_PROVIDERS = ["GPT", "DeepSeek"]
 
@@ -111,7 +105,7 @@ def run_app() -> None:
         project_label = st.selectbox(
             "Тип проекта",
             project_options,
-            index=_option_index(project_options, settings.project_label, default=1),
+            index=_option_index(project_options, settings.project_label),
         )
         num_phrases = st.slider(
             "Фраз Wordstat на направление",
@@ -506,6 +500,7 @@ def _assessment_row(assessment: NicheAssessment) -> dict[str, object]:
     evidence_items = getattr(assessment, "evidence_items", [])
     return {
         "direction": assessment.direction.direction,
+        "project_type": project_type_label(assessment.direction.project_type),
         "score": assessment.score,
         "verdict": assessment.verdict,
         "score_confidence": score_breakdown.confidence if score_breakdown else "",

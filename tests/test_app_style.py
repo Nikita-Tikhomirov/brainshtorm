@@ -28,5 +28,6 @@ def test_assessment_row_handles_legacy_assessment_without_strict_fields():
     row = _assessment_row(assessment)
 
     assert row["direction"] == "пупсы"
+    assert row["project_type"] == "SEO-сайт"
     assert row["score_confidence"] == ""
     assert row["evidence_count"] == 0

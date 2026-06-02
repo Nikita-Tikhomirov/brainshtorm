@@ -1,6 +1,7 @@
 from collections import Counter
 
 from brainshtorm.models import NicheAssessment
+from brainshtorm.project_types import project_type_label
 
 
 def render_markdown_report(assessments: list[NicheAssessment]) -> str:
@@ -30,6 +31,7 @@ def render_markdown_report(assessments: list[NicheAssessment]) -> str:
                 f"- Verdict: `{assessment.verdict}`",
                 f"- Score: `{assessment.score:.1f}`",
                 f"- Region: {direction.region}",
+                f"- Project type: {project_type_label(direction.project_type)} (`{direction.project_type}`)",
                 f"- Demand: {metrics.demand}",
                 f"- Trend: {metrics.trend:.2f}",
                 f"- Competition: {metrics.competition:.2f}",

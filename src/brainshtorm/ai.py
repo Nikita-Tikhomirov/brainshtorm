@@ -7,6 +7,7 @@ from dataclasses import replace
 from typing import Any, Callable, Protocol
 
 from brainshtorm.models import NicheAssessment
+from brainshtorm.project_types import project_type_label
 
 
 AiTransport = Callable[[str, dict[str, Any], dict[str, str], int], dict[str, Any]]
@@ -215,6 +216,7 @@ def build_ai_prompt(assessment: NicheAssessment) -> str:
             f"direction: {direction.direction}",
             f"region: {direction.region}",
             f"project_type: {direction.project_type}",
+            f"project_type_label: {project_type_label(direction.project_type)}",
             f"budget_rub: {direction.budget_rub}",
             f"max_difficulty: {direction.max_difficulty}",
             f"score: {assessment.score}",

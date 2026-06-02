@@ -10,7 +10,8 @@ from typing import Any, Callable
 
 from brainshtorm.keywords import build_keyword_clusters
 from brainshtorm.models import DirectionInput, KeywordCluster, MarketMetrics
-from brainshtorm.providers import _estimate_launch_budget, _estimate_risk
+from brainshtorm.project_types import estimate_launch_budget
+from brainshtorm.providers import _estimate_risk
 
 
 BASE_URL = "https://searchapi.api.cloud.yandex.net"
@@ -133,7 +134,7 @@ class YandexWordstatProvider:
         competition = _competition_estimate(demand, commercial_intent)
         estimated_difficulty = max(1, min(10, round(competition * 10)))
         risk_level = _estimate_risk(direction.direction)
-        launch_budget = _estimate_launch_budget(direction.project_type, estimated_difficulty)
+        launch_budget = estimate_launch_budget(direction.project_type, estimated_difficulty)
 
         return MarketMetrics(
             demand=demand,

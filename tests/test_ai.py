@@ -151,6 +151,35 @@ def test_build_ai_prompt_contains_strict_evidence_contract():
     assert "score_formula:" in prompt
 
 
+def test_build_ai_prompt_includes_resolved_auto_project_type():
+    direction = DirectionInput(
+        direction="курсы нейросетей",
+        region="Россия",
+        budget_rub=150000,
+        max_difficulty=6,
+        project_type="auto",
+    )
+    assessment = score_direction(
+        direction,
+        MarketMetrics(
+            demand=6400,
+            trend=0.18,
+            regional_affinity=1.1,
+            commercial_intent=0.78,
+            competition=0.45,
+            estimated_launch_budget=999999,
+            estimated_difficulty=5,
+            seasonality=0.1,
+            risk_level=0.1,
+        ),
+    )
+
+    prompt = build_ai_prompt(assessment)
+
+    assert "project_type: infoproduct" in prompt
+    assert "project_type_label: Инфопродукт" in prompt
+
+
 def test_openai_client_posts_responses_request_and_returns_output_text():
     calls = []
 

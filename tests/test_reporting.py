@@ -174,6 +174,7 @@ def test_markdown_report_contains_ranked_verdicts():
     assert "# Runet Niche Analyzer Report" in report
     assert "ремонт роботов пылесосов" in report
     assert "take" in report
+    assert "Project type: Лидогенерация" in report
     assert "SEO-страницы по моделям" in report
 
 
@@ -229,6 +230,35 @@ def test_markdown_report_contains_strict_evidence_and_score_formula():
     assert "demand" in report
     assert "raw `8500`" in report
     assert "Wordstat: Спрос" in report
+
+
+def test_markdown_report_contains_auto_project_type_evidence():
+    direction = DirectionInput(
+        direction="курсы нейросетей",
+        region="Россия",
+        budget_rub=150000,
+        max_difficulty=6,
+        project_type="auto",
+    )
+    assessment = score_direction(
+        direction,
+        MarketMetrics(
+            demand=6400,
+            trend=0.18,
+            regional_affinity=1.1,
+            commercial_intent=0.78,
+            competition=0.45,
+            estimated_launch_budget=999999,
+            estimated_difficulty=5,
+            seasonality=0.1,
+            risk_level=0.1,
+        ),
+    )
+
+    report = render_markdown_report([assessment])
+
+    assert "Project type: Инфопродукт" in report
+    assert "Project type inference: Рекомендованный тип проекта" in report
 
 
 def test_markdown_report_contains_serp_details_when_available():

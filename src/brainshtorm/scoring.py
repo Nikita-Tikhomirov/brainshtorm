@@ -11,15 +11,22 @@ from brainshtorm.models import (
     ScoreFactor,
     TAKE,
 )
+from brainshtorm.project_types import resolve_project_type
 
 
 SCORE_FORMULA_VERSION = "score-v2-strict-evidence"
 
 
 def score_direction(direction: DirectionInput, metrics: MarketMetrics) -> NicheAssessment:
+    project_type_decision = resolve_project_type(direction, metrics)
+    direction = project_type_decision.direction
+    metrics = project_type_decision.metrics
     breakdown = build_score_breakdown(direction, metrics)
     score = breakdown.final_score
     verdict = _verdict_for(score)
+    evidence_items = _metric_evidence(direction, metrics)
+    if project_type_decision.evidence:
+        evidence_items = [project_type_decision.evidence, *evidence_items]
 
     return NicheAssessment(
         direction=direction,
@@ -31,7 +38,7 @@ def score_direction(direction: DirectionInput, metrics: MarketMetrics) -> NicheA
         promotion_steps=_promotion_steps(direction),
         risks=_risks(direction, metrics),
         score_breakdown=breakdown,
-        evidence_items=_metric_evidence(direction, metrics),
+        evidence_items=evidence_items,
     )
 
 
