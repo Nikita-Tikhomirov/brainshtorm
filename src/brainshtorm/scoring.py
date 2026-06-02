@@ -133,8 +133,9 @@ def build_score_breakdown(direction: DirectionInput, metrics: MarketMetrics) -> 
 
 
 def ensure_score_breakdown(assessment: NicheAssessment) -> ScoreBreakdown:
-    if assessment.score_breakdown:
-        return assessment.score_breakdown
+    score_breakdown = getattr(assessment, "score_breakdown", None)
+    if score_breakdown:
+        return score_breakdown
     breakdown = build_score_breakdown(assessment.direction, assessment.metrics)
     if breakdown.final_score == assessment.score:
         return breakdown

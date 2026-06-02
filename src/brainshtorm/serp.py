@@ -291,6 +291,7 @@ def analyze_serp_results(
 def apply_serp_analysis(assessment: NicheAssessment, analysis: SerpAnalysis) -> NicheAssessment:
     score = round(_clamp_float(assessment.score + analysis.score_delta), 1)
     base_breakdown = ensure_score_breakdown(assessment)
+    evidence_items = getattr(assessment, "evidence_items", [])
     risks = list(assessment.risks)
     if analysis.estimated_difficulty > assessment.direction.max_difficulty:
         risks.append(
@@ -317,7 +318,7 @@ def apply_serp_analysis(assessment: NicheAssessment, analysis: SerpAnalysis) -> 
             confidence_delta=0.15,
             confidence_note="Seed SERP checked.",
         ),
-        evidence_items=[*assessment.evidence_items, _serp_evidence(analysis, claim="Seed SERP")],
+        evidence_items=[*evidence_items, _serp_evidence(analysis, claim="Seed SERP")],
     )
 
 
@@ -337,6 +338,7 @@ def apply_keyword_cluster_serp_analysis(
     cluster_delta = round(_clamp_float(average_delta * 0.6, -12.0, 8.0), 1)
     score = round(_clamp_float(assessment.score + cluster_delta), 1)
     base_breakdown = ensure_score_breakdown(assessment)
+    evidence_items = getattr(assessment, "evidence_items", [])
     risks = list(assessment.risks)
     average_difficulty = sum(
         cluster.serp_analysis.estimated_difficulty
@@ -370,7 +372,7 @@ def apply_keyword_cluster_serp_analysis(
             confidence_note="Commercial keyword clusters checked in SERP.",
         ),
         evidence_items=[
-            *assessment.evidence_items,
+            *evidence_items,
             *[_cluster_serp_evidence(cluster) for cluster in checked_clusters if cluster.serp_analysis],
         ],
     )

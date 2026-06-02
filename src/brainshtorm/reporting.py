@@ -43,10 +43,12 @@ def render_markdown_report(assessments: list[NicheAssessment]) -> str:
             ]
         )
         lines.extend(f"- {step}" for step in assessment.promotion_steps)
-        if assessment.score_breakdown or assessment.evidence_items:
+        score_breakdown = getattr(assessment, "score_breakdown", None)
+        evidence_items = getattr(assessment, "evidence_items", [])
+        if score_breakdown or evidence_items:
             lines.extend(["", "Strict evidence:", ""])
-            if assessment.score_breakdown:
-                breakdown = assessment.score_breakdown
+            if score_breakdown:
+                breakdown = score_breakdown
                 lines.extend(
                     [
                         "Score formula:",
@@ -67,14 +69,14 @@ def render_markdown_report(assessments: list[NicheAssessment]) -> str:
                     f"evidence: {factor.evidence}"
                     for factor in breakdown.factors
                 )
-            if assessment.evidence_items:
+            if evidence_items:
                 lines.extend(["", "Evidence ledger:", ""])
-                for item in assessment.evidence_items:
+                for item in evidence_items:
                     detail_text = "; ".join(item.details)
                     suffix = f" ({detail_text})" if detail_text else ""
                     lines.append(f"- {item.source}: {item.claim} = `{item.value}`{suffix}")
-        if assessment.product_recommendation:
-            recommendation = assessment.product_recommendation
+        recommendation = getattr(assessment, "product_recommendation", None)
+        if recommendation:
             lines.extend(
                 [
                     "",
@@ -92,13 +94,14 @@ def render_markdown_report(assessments: list[NicheAssessment]) -> str:
                     "",
                 ]
             )
-            if recommendation.opportunity_factors:
+            opportunity_factors = getattr(recommendation, "opportunity_factors", [])
+            if opportunity_factors:
                 lines.extend(
                     "- "
                     f"{factor.key}: raw `{factor.raw_value}`; "
                     f"contribution `{factor.contribution:+.1f}`; "
                     f"evidence: {factor.evidence}"
-                    for factor in recommendation.opportunity_factors
+                    for factor in opportunity_factors
                 )
             else:
                 lines.append("- n/a")
@@ -114,8 +117,8 @@ def render_markdown_report(assessments: list[NicheAssessment]) -> str:
             lines.extend(f"- {step}" for step in recommendation.traffic_plan)
             lines.extend(["", "Evidence:", ""])
             lines.extend(f"- {item}" for item in recommendation.evidence)
-        if assessment.serp_analysis:
-            serp = assessment.serp_analysis
+        serp = getattr(assessment, "serp_analysis", None)
+        if serp:
             lines.extend(
                 [
                     "",
@@ -123,21 +126,23 @@ def render_markdown_report(assessments: list[NicheAssessment]) -> str:
                     "",
                     f"- SERP difficulty: {serp.estimated_difficulty}/10",
                     f"- SERP score delta: `{serp.score_delta:.1f}`",
-                    f"- Offer gap: `{serp.offer_gap_score:.2f}`",
-                    f"- Offer signals: {', '.join(serp.offer_signals) or 'n/a'}",
-                    f"- Missing offer signals: {', '.join(serp.missing_offer_signals) or 'n/a'}",
-                    f"- Competitor types: {', '.join(serp.competitor_types) or 'n/a'}",
+                    f"- Offer gap: `{getattr(serp, 'offer_gap_score', 0.0):.2f}`",
+                    f"- Offer signals: {', '.join(getattr(serp, 'offer_signals', [])) or 'n/a'}",
+                    f"- Missing offer signals: {', '.join(getattr(serp, 'missing_offer_signals', [])) or 'n/a'}",
+                    f"- Competitor types: {', '.join(getattr(serp, 'competitor_types', [])) or 'n/a'}",
                     f"- SERP summary: {serp.summary}",
                     f"- Top domains: {', '.join(serp.top_domains) or 'n/a'}",
                 ]
             )
-            if serp.weak_spots:
+            weak_spots = getattr(serp, "weak_spots", [])
+            if weak_spots:
                 lines.extend(["", "SERP weak spots:", ""])
-                lines.extend(f"- {spot}" for spot in serp.weak_spots)
-        if assessment.keyword_clusters:
+                lines.extend(f"- {spot}" for spot in weak_spots)
+        keyword_clusters = getattr(assessment, "keyword_clusters", [])
+        if keyword_clusters:
             lines.extend(["", "Keyword clusters:", ""])
-            for cluster in assessment.keyword_clusters:
-                serp = cluster.serp_analysis
+            for cluster in keyword_clusters:
+                serp = getattr(cluster, "serp_analysis", None)
                 if serp:
                     lines.append(
                         "- "
@@ -145,7 +150,7 @@ def render_markdown_report(assessments: list[NicheAssessment]) -> str:
                         f"demand {cluster.total_demand}; "
                         f"difficulty {serp.estimated_difficulty}/10; "
                         f"delta `{serp.score_delta}`; "
-                        f"offer gap `{serp.offer_gap_score:.2f}`; "
+                        f"offer gap `{getattr(serp, 'offer_gap_score', 0.0):.2f}`; "
                         f"top {', '.join(serp.top_domains) or 'n/a'}"
                     )
                 else:
@@ -154,13 +159,14 @@ def render_markdown_report(assessments: list[NicheAssessment]) -> str:
                         f"{cluster.name}: `{cluster.representative_query}`; "
                         f"demand {cluster.total_demand}; SERP not checked"
                     )
-        if assessment.ai_insight:
+        ai_insight = getattr(assessment, "ai_insight", None)
+        if ai_insight:
             lines.extend(
                 [
                     "",
                     "AI verdict:",
                     "",
-                    assessment.ai_insight,
+                    ai_insight,
                 ]
             )
         lines.extend(["", "Risks:", ""])

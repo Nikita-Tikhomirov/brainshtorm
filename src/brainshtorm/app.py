@@ -500,14 +500,16 @@ def _render_results(assessments: list[NicheAssessment]) -> None:
 
 
 def _assessment_row(assessment: NicheAssessment) -> dict[str, object]:
-    serp = assessment.serp_analysis
-    recommendation = assessment.product_recommendation
+    serp = getattr(assessment, "serp_analysis", None)
+    recommendation = getattr(assessment, "product_recommendation", None)
+    score_breakdown = getattr(assessment, "score_breakdown", None)
+    evidence_items = getattr(assessment, "evidence_items", [])
     return {
         "direction": assessment.direction.direction,
         "score": assessment.score,
         "verdict": assessment.verdict,
-        "score_confidence": assessment.score_breakdown.confidence if assessment.score_breakdown else "",
-        "evidence_count": len(assessment.evidence_items),
+        "score_confidence": score_breakdown.confidence if score_breakdown else "",
+        "evidence_count": len(evidence_items),
         "opportunity_score": recommendation.opportunity_score if recommendation else "",
         "launch": recommendation.product_title if recommendation else "",
         "first_test": recommendation.first_test if recommendation else "",
@@ -518,11 +520,11 @@ def _assessment_row(assessment: NicheAssessment) -> dict[str, object]:
         "difficulty": assessment.metrics.estimated_difficulty,
         "serp_difficulty": serp.estimated_difficulty if serp else "",
         "serp_delta": serp.score_delta if serp else "",
-        "offer_gap": serp.offer_gap_score if serp else "",
-        "serp_weak_spots": _short_text("; ".join(serp.weak_spots) if serp else ""),
+        "offer_gap": getattr(serp, "offer_gap_score", "") if serp else "",
+        "serp_weak_spots": _short_text("; ".join(getattr(serp, "weak_spots", [])) if serp else ""),
         "top_domains": ", ".join(serp.top_domains) if serp else "",
         "keyword_clusters": _cluster_summary(assessment),
-        "ai_insight": _short_text(assessment.ai_insight),
+        "ai_insight": _short_text(getattr(assessment, "ai_insight", None)),
         "product": assessment.product_idea,
     }
 
@@ -565,10 +567,10 @@ def _short_text(value: str | None, *, limit: int = 180) -> str:
 
 def _cluster_summary(assessment: NicheAssessment) -> str:
     parts: list[str] = []
-    for cluster in assessment.keyword_clusters:
-        serp = cluster.serp_analysis
+    for cluster in getattr(assessment, "keyword_clusters", []):
+        serp = getattr(cluster, "serp_analysis", None)
         if serp:
-            parts.append(f"{cluster.name}: {serp.estimated_difficulty}/10, gap {serp.offer_gap_score:.2f}")
+            parts.append(f"{cluster.name}: {serp.estimated_difficulty}/10, gap {getattr(serp, 'offer_gap_score', 0.0):.2f}")
         else:
             parts.append(cluster.name)
     return "; ".join(parts)

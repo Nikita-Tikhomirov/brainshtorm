@@ -109,10 +109,11 @@ class DeepSeekClient:
 def build_ai_prompt(assessment: NicheAssessment) -> str:
     direction = assessment.direction
     metrics = assessment.metrics
-    serp = assessment.serp_analysis
+    serp = getattr(assessment, "serp_analysis", None)
     score_lines = ["score_formula: нет данных"]
-    if assessment.score_breakdown:
-        breakdown = assessment.score_breakdown
+    score_breakdown = getattr(assessment, "score_breakdown", None)
+    if score_breakdown:
+        breakdown = score_breakdown
         score_lines = [
             "score_formula:",
             f"formula_version: {breakdown.formula_version}",
@@ -127,12 +128,13 @@ def build_ai_prompt(assessment: NicheAssessment) -> str:
             for factor in breakdown.factors
         )
     evidence_lines = ["strict_evidence: нет данных"]
-    if assessment.evidence_items:
+    evidence_items = getattr(assessment, "evidence_items", [])
+    if evidence_items:
         evidence_lines = ["strict_evidence:"]
         evidence_lines.extend(
             "- "
             f"{item.source} | {item.claim} | {item.value} | {'; '.join(item.details) or 'n/a'}"
-            for item in assessment.evidence_items
+            for item in evidence_items
         )
     serp_lines = [
         "SERP: нет данных",
@@ -143,17 +145,18 @@ def build_ai_prompt(assessment: NicheAssessment) -> str:
             f"serp_delta: {serp.score_delta}",
             f"serp_summary: {serp.summary}",
             f"top_domains: {', '.join(serp.top_domains) or 'n/a'}",
-            f"offer_gap: {serp.offer_gap_score}",
-            f"offer_signals: {', '.join(serp.offer_signals) or 'n/a'}",
-            f"missing_offer_signals: {', '.join(serp.missing_offer_signals) or 'n/a'}",
-            f"competitor_types: {', '.join(serp.competitor_types) or 'n/a'}",
-            f"serp_weak_spots: {'; '.join(serp.weak_spots) or 'n/a'}",
+            f"offer_gap: {getattr(serp, 'offer_gap_score', 0.0)}",
+            f"offer_signals: {', '.join(getattr(serp, 'offer_signals', [])) or 'n/a'}",
+            f"missing_offer_signals: {', '.join(getattr(serp, 'missing_offer_signals', [])) or 'n/a'}",
+            f"competitor_types: {', '.join(getattr(serp, 'competitor_types', [])) or 'n/a'}",
+            f"serp_weak_spots: {'; '.join(getattr(serp, 'weak_spots', [])) or 'n/a'}",
         ]
     cluster_lines = ["keyword_clusters: нет данных"]
-    if assessment.keyword_clusters:
+    keyword_clusters = getattr(assessment, "keyword_clusters", [])
+    if keyword_clusters:
         cluster_lines = ["keyword_clusters:"]
-        for cluster in assessment.keyword_clusters:
-            cluster_serp = cluster.serp_analysis
+        for cluster in keyword_clusters:
+            cluster_serp = getattr(cluster, "serp_analysis", None)
             if cluster_serp:
                 cluster_lines.append(
                     "- "
@@ -161,9 +164,9 @@ def build_ai_prompt(assessment: NicheAssessment) -> str:
                     f"demand={cluster.total_demand}; "
                     f"serp_difficulty={cluster_serp.estimated_difficulty}/10; "
                     f"serp_delta={cluster_serp.score_delta}; "
-                    f"offer_gap={cluster_serp.offer_gap_score}; "
-                    f"offer_signals={', '.join(cluster_serp.offer_signals) or 'n/a'}; "
-                    f"weak_spots={'; '.join(cluster_serp.weak_spots) or 'n/a'}; "
+                    f"offer_gap={getattr(cluster_serp, 'offer_gap_score', 0.0)}; "
+                    f"offer_signals={', '.join(getattr(cluster_serp, 'offer_signals', [])) or 'n/a'}; "
+                    f"weak_spots={'; '.join(getattr(cluster_serp, 'weak_spots', [])) or 'n/a'}; "
                     f"top_domains={', '.join(cluster_serp.top_domains) or 'n/a'}"
                 )
             else:
@@ -173,8 +176,9 @@ def build_ai_prompt(assessment: NicheAssessment) -> str:
                     f"demand={cluster.total_demand}; SERP=нет данных"
                 )
     recommendation_lines = ["launch_recommendation: нет данных"]
-    if assessment.product_recommendation:
-        recommendation = assessment.product_recommendation
+    recommendation = getattr(assessment, "product_recommendation", None)
+    if recommendation:
+        opportunity_factors = getattr(recommendation, "opportunity_factors", [])
         recommendation_lines = [
             "launch_recommendation:",
             f"product_title: {recommendation.product_title}",
@@ -191,7 +195,7 @@ def build_ai_prompt(assessment: NicheAssessment) -> str:
             "opportunity_formula: "
             + "; ".join(
                 f"{factor.key} raw={factor.raw_value} contribution={factor.contribution} evidence={factor.evidence}"
-                for factor in recommendation.opportunity_factors
+                for factor in opportunity_factors
             ),
         ]
 

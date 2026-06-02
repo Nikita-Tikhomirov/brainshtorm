@@ -1,3 +1,5 @@
+from types import SimpleNamespace
+
 from brainshtorm.ai import (
     DeepSeekClient,
     OpenAiClient,
@@ -96,6 +98,26 @@ def test_build_ai_prompt_contains_metrics_serp_and_output_contract():
     assert "Лидогенератор ремонта роботов пылесосов" in prompt
     assert "offer_gap: 0.55" in prompt
     assert "missing_offer_signals: гарантия" in prompt
+
+
+def test_build_ai_prompt_handles_legacy_assessment_without_strict_fields():
+    assessment = SimpleNamespace(
+        direction=DirectionInput("кактусы", "Россия", 150000, 6, "seo_site"),
+        metrics=MarketMetrics(1200, 0.1, 1.0, 0.2, 0.4, 60000, 4, 0.1, 0.0),
+        score=62.5,
+        verdict="review",
+        product_idea="Контентный сайт",
+        risks=["Проверить спрос"],
+        serp_analysis=None,
+        keyword_clusters=[],
+        product_recommendation=None,
+    )
+
+    prompt = build_ai_prompt(assessment)
+
+    assert "кактусы" in prompt
+    assert "score_formula: нет данных" in prompt
+    assert "strict_evidence: нет данных" in prompt
 
 
 def test_build_ai_prompt_contains_strict_evidence_contract():

@@ -1,3 +1,5 @@
+from types import SimpleNamespace
+
 from brainshtorm.models import (
     DirectionInput,
     KeywordCandidate,
@@ -173,6 +175,28 @@ def test_markdown_report_contains_ranked_verdicts():
     assert "ремонт роботов пылесосов" in report
     assert "take" in report
     assert "SEO-страницы по моделям" in report
+
+
+def test_markdown_report_handles_legacy_assessment_without_strict_fields():
+    assessment = SimpleNamespace(
+        direction=DirectionInput("кактусы", "Россия", 150000, 6, "seo_site"),
+        metrics=MarketMetrics(1200, 0.1, 1.0, 0.2, 0.4, 60000, 4, 0.1, 0.0),
+        score=62.5,
+        verdict="review",
+        explanation="legacy",
+        product_idea="Контентный сайт",
+        promotion_steps=["Собрать статьи"],
+        risks=["Проверить спрос"],
+        serp_analysis=None,
+        keyword_clusters=[],
+        product_recommendation=None,
+        ai_insight=None,
+    )
+
+    report = render_markdown_report([assessment])
+
+    assert "кактусы" in report
+    assert "Strict evidence" not in report
 
 
 def test_markdown_report_contains_strict_evidence_and_score_formula():
