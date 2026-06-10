@@ -2,6 +2,31 @@
 
 MVP инструмента для первичного отбора ниш под Рунет. Он принимает пачку до 100 seed-направлений, оценивает спрос, тренд, конкуренцию, бюджет, сложность и выдает CSV/Markdown-отчет с вердиктами, строгими доказательствами и готовыми launch-рекомендациями.
 
+## Короткий контекст для другого чата
+
+Проект лежит в `C:\Users\user\Desktop\brainshtorm`. Это локальное Streamlit-приложение `Runet Niche Analyzer` для проверки ниш под Рунет. Пользователь вставляет список тем, бюджет, сложность и API-ключи; приложение собирает Wordstat/Demo-метрики, при необходимости проверяет SERP и коммерческие кластеры, выбирает тип проекта, считает score/opportunity и формирует CSV/Markdown-отчет.
+
+Главные файлы:
+
+- `src/brainshtorm/app.py` — интерфейс Streamlit и основной pipeline анализа.
+- `src/brainshtorm/yandex_wordstat.py` — Yandex Wordstat API.
+- `src/brainshtorm/serp.py` — Yandex SERP API и оценка выдачи.
+- `src/brainshtorm/project_types.py` — авто-выбор типа проекта.
+- `src/brainshtorm/scoring.py` — базовый score и strict evidence.
+- `src/brainshtorm/opportunity.py` — launch-рекомендации.
+- `src/brainshtorm/ai.py` — GPT/DeepSeek-клиенты, AI-вердикт и AI-уточнение типа проекта.
+- `src/brainshtorm/settings.py` — локальное сохранение настроек и ключей.
+
+Быстрые команды:
+
+```powershell
+.\run_app.cmd
+python -m pytest -q
+python -m brainshtorm.cli examples/directions.csv --output-dir out/demo --provider demo
+```
+
+Если другой чат помогает с настройкой, попросите его сначала прочитать этот README и не просить вставлять ключи в код. Ключи вводятся только в интерфейсе и сохраняются локально в `%USERPROFILE%\.brainshtorm\settings.json`.
+
 Есть два режима:
 
 - `Yandex Wordstat API` — пользователь вставляет API key и folder ID прямо в интерфейсе, ключ и параметры сохраняются локально на компьютере.
@@ -20,6 +45,8 @@ AI-вердикт подключен как третий этап: GPT или De
 ```powershell
 python -m pip install -e .
 ```
+
+Если зависимости уже установлены и приложение запускалось раньше, повторная установка обычно не нужна.
 
 ## Запуск
 
@@ -53,6 +80,36 @@ python -m brainshtorm.cli examples/directions.csv --output-dir out/demo --provid
 
 - `out/demo/analysis.csv` — таблица с оценками.
 - `out/demo/report.md` — отчет с ранжированием, launch-рекомендациями, шагами продвижения и рисками.
+
+## Настройка ключей
+
+### Yandex
+
+Для реального анализа нужны:
+
+- `Yandex API key`;
+- `Yandex folder ID`;
+- сервисный аккаунт Yandex Cloud с ролью `search-api.webSearch.user`.
+
+Wordstat в Yandex Search API дает методы `GetTop`, `GetDynamics`, `GetRegionsDistribution` и требует роль `search-api.webSearch.user`. Документация Yandex по Wordstat: <https://aistudio.yandex.ru/docs/en/search-api/concepts/wordstat.html>.
+
+В интерфейсе:
+
+1. Выберите режим `Yandex Wordstat API`.
+2. Вставьте `Yandex API key`.
+3. Вставьте `Yandex folder ID`.
+4. Нажмите `Сохранить параметры` или сразу `Запустить анализ`.
+
+### GPT/OpenAI и DeepSeek
+
+AI-ключи не обязательны для базового анализа. Без них приложение все равно считает score, evidence и launch-рекомендации.
+
+AI нужен для:
+
+- `Уточнять авто-тип проекта через AI`;
+- `Генерировать AI-вердикт финалистов`.
+
+Ключи вставляются в интерфейсе. На Windows они сохраняются через DPAPI-защиту текущего пользователя и не попадают в git.
 
 ## Формат CSV
 
@@ -109,11 +166,48 @@ direction,region,budget_rub,max_difficulty,project_type
 
 На Windows Yandex/OpenAI/DeepSeek API key и folder ID записываются через DPAPI-защиту текущего пользователя. Файл настроек находится вне репозитория и не попадает в git. Логи фонового запуска пишутся в `out\logs`.
 
+## Как читать результат
+
+Главные поля:
+
+- `verdict` — `take`, `review` или `skip`.
+- `score` — расчетный балл ниши по спросу, тренду, конкуренции, бюджету, сложности и рискам.
+- `project_type` — выбранный тип проекта: вручную или через `auto`.
+- `launch` — что именно запускать.
+- `opportunity_score` — расчетная привлекательность launch-идеи.
+- `first_test` — первый тест гипотезы.
+- `keyword_clusters` — коммерческие кластеры и их SERP-сложность.
+- `offer_gap` — признаки слабого/недозакрытого оффера в выдаче.
+- `evidence_count` — сколько доказательств привязано к выводу.
+
+Важно: `score`, `difficulty`, `offer_gap`, `opportunity_score` — это расчетные фильтры, а не гарантия прибыли. Надежнее всего смотреть на `Strict evidence`, `Score formula`, `Project type inference`, `SERP analysis`, `Keyword clusters` и `Launch recommendation` в Markdown-отчете.
+
 ## Проверки
 
 ```powershell
 python -m pytest -v
 ```
+
+Минимальная проверка перед помощью в другом чате:
+
+```powershell
+git status --short
+python -m pytest -q
+.\run_app.cmd
+```
+
+Откройте `http://localhost:8501`, выберите `Demo`, вставьте 2-3 темы и нажмите `Запустить анализ`. Если Demo работает, но Yandex нет, проблема почти наверняка в ключе, folder ID, роли или доступе Yandex API.
+
+## Частые проблемы
+
+- `Yandex API key is required` — в режиме `Yandex Wordstat API` не вставлен ключ.
+- `Yandex folder ID is required` — не вставлен folder ID каталога.
+- `Yandex Wordstat HTTP 401/403` — ключ, права сервисного аккаунта или folder ID неверные.
+- `Yandex SERP response has empty rawData` — Yandex Search API вернул пустую выдачу или недоступный формат ответа.
+- `AI provider HTTP 401/403` — неверный GPT/DeepSeek API key.
+- `DeepSeek returned empty message` — DeepSeek вернул thinking-ответ без финального `content`; приложение автоматически делает повтор без thinking mode. Если ошибка осталась, в ней будут `finish_reason`, наличие `reasoning_content` и данные fallback-повтора.
+- Приложение не открылось с ярлыка — запустите `.\run_app.cmd` из корня проекта и проверьте вывод терминала.
+- Порт `8501` занят — закройте старый процесс Streamlit или запустите Streamlit на другом порту вручную.
 
 ## Следующий этап
 
