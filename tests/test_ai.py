@@ -4,11 +4,13 @@ from brainshtorm.ai import (
     AiError,
     DeepSeekClient,
     OpenAiClient,
+    OpenRouterClient,
     apply_ai_insight,
     build_ai_prompt,
     build_project_type_prompt,
     generate_ai_insight,
     parse_project_type_choices,
+    _urllib_transport,
 )
 from brainshtorm.models import (
     DirectionInput,
@@ -324,6 +326,69 @@ def test_deepseek_client_empty_message_error_has_diagnostics_after_retry():
     assert "finish_reason=length" in message
     assert "reasoning_content_present=True" in message
     assert "non-thinking retry" in message
+
+
+def test_openrouter_client_posts_chat_completion_request_and_returns_message():
+    calls = []
+
+    def transport(url, body, headers, timeout):
+        calls.append((url, body, headers, timeout))
+        return {
+            "choices": [
+                {"message": {"content": "Вердикт: запускать ограниченный тест."}},
+            ],
+        }
+
+    client = OpenRouterClient(
+        api_key="openrouter-secret",
+        model="anthropic/claude-opus-5",
+        transport=transport,
+    )
+
+    result = client.generate("prompt", max_output_tokens=2400)
+
+    assert result == "Вердикт: запускать ограниченный тест."
+    assert calls[0][0] == "https://openrouter.ai/api/v1/chat/completions"
+    assert calls[0][1]["model"] == "anthropic/claude-opus-5"
+    assert calls[0][1]["max_completion_tokens"] == 2400
+    assert "max_tokens" not in calls[0][1]
+    assert calls[0][1]["messages"][0]["role"] == "system"
+    assert calls[0][1]["messages"][1] == {"role": "user", "content": "prompt"}
+    assert calls[0][2]["Authorization"] == "Bearer openrouter-secret"
+    assert calls[0][2]["X-OpenRouter-Title"] == "Runet Niche Analyzer"
+
+
+def test_openrouter_client_rejects_empty_message_with_provider_name():
+    client = OpenRouterClient(
+        api_key="openrouter-secret",
+        transport=lambda *_args: {"choices": [{"message": {"content": ""}}]},
+    )
+
+    try:
+        client.generate("prompt")
+    except AiError as exc:
+        message = str(exc)
+    else:
+        raise AssertionError("OpenRouterClient should raise AiError")
+
+    assert "OpenRouter returned empty message" in message
+
+
+def test_default_ai_transport_wraps_socket_timeout(monkeypatch):
+    monkeypatch.setattr(
+        "brainshtorm.ai.urllib.request.urlopen",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(TimeoutError("timed out")),
+    )
+
+    try:
+        _urllib_transport("https://example.test", {}, {}, 1)
+    except AiError as exc:
+        message = str(exc)
+    else:
+        raise AssertionError("TimeoutError should be wrapped as AiError")
+
+    assert "request failed" in message
+    assert "timed out" in message
 
 
 def test_build_project_type_prompt_contains_allowed_types_and_candidates():

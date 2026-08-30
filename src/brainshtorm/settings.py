@@ -35,9 +35,20 @@ class AppSettings:
     ai_provider: str = "GPT"
     openai_api_key: str = ""
     deepseek_api_key: str = ""
+    openrouter_api_key: str = ""
     openai_model: str = "gpt-5.5"
     deepseek_model: str = "deepseek-v4-pro"
+    openrouter_model: str = "anthropic/claude-opus-5"
     ai_finalists: int = 5
+    analysis_mode: str = "Поиск ниш"
+    local_service: str = ""
+    local_audience: str = ""
+    local_city: str = ""
+    local_session_price_rub: int = 1500
+    local_diagnostic_price_rub: int = 3000
+    local_course_sessions: int = 8
+    local_room_cost_per_visit_rub: int = 500
+    local_ad_test_budget_rub: int = 15000
     pasted_directions: str = ""
 
 
@@ -85,9 +96,30 @@ def load_settings(
         ai_provider=_as_str(payload.get("ai_provider"), defaults.ai_provider),
         openai_api_key=unprotect(_as_str(payload.get("openai_api_key"), "")),
         deepseek_api_key=unprotect(_as_str(payload.get("deepseek_api_key"), "")),
+        openrouter_api_key=unprotect(_as_str(payload.get("openrouter_api_key"), "")),
         openai_model=_as_str(payload.get("openai_model"), defaults.openai_model),
         deepseek_model=_as_str(payload.get("deepseek_model"), defaults.deepseek_model),
+        openrouter_model=_as_str(payload.get("openrouter_model"), defaults.openrouter_model),
         ai_finalists=_as_int(payload.get("ai_finalists"), defaults.ai_finalists),
+        analysis_mode=_as_str(payload.get("analysis_mode"), defaults.analysis_mode),
+        local_service=_as_str(payload.get("local_service"), defaults.local_service),
+        local_audience=_as_str(payload.get("local_audience"), defaults.local_audience),
+        local_city=_as_str(payload.get("local_city"), defaults.local_city),
+        local_session_price_rub=_as_int(
+            payload.get("local_session_price_rub"), defaults.local_session_price_rub
+        ),
+        local_diagnostic_price_rub=_as_int(
+            payload.get("local_diagnostic_price_rub"), defaults.local_diagnostic_price_rub
+        ),
+        local_course_sessions=_as_int(
+            payload.get("local_course_sessions"), defaults.local_course_sessions
+        ),
+        local_room_cost_per_visit_rub=_as_int(
+            payload.get("local_room_cost_per_visit_rub"), defaults.local_room_cost_per_visit_rub
+        ),
+        local_ad_test_budget_rub=_as_int(
+            payload.get("local_ad_test_budget_rub"), defaults.local_ad_test_budget_rub
+        ),
         pasted_directions=_as_str(payload.get("pasted_directions"), defaults.pasted_directions),
     )
 
@@ -105,6 +137,7 @@ def save_settings(
     payload["folder_id"] = protect(settings.folder_id)
     payload["openai_api_key"] = protect(settings.openai_api_key)
     payload["deepseek_api_key"] = protect(settings.deepseek_api_key)
+    payload["openrouter_api_key"] = protect(settings.openrouter_api_key)
 
     settings_path.parent.mkdir(parents=True, exist_ok=True)
     settings_path.write_text(
@@ -120,8 +153,10 @@ def protect_secret(value: str) -> str:
     if sys.platform == "win32":
         try:
             return "dpapi:" + _b64(_dpapi_protect(value.encode("utf-8")))
-        except OSError:
-            pass
+        except OSError as exc:
+            raise OSError(
+                "Не удалось защитить секрет через Windows DPAPI; ключ не сохранен"
+            ) from exc
     return "base64:" + _b64(value.encode("utf-8"))
 
 

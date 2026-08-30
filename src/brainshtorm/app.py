@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 import io
+from dataclasses import dataclass, replace
 
 import streamlit as st
 
@@ -9,13 +10,21 @@ from brainshtorm.ai import (
     AiError,
     DeepSeekClient,
     OpenAiClient,
+    OpenRouterClient,
     apply_ai_insight,
     generate_ai_insight,
     generate_project_type_choices,
 )
 from brainshtorm.app_inputs import parse_pasted_directions
 from brainshtorm.keywords import attach_cluster_serp
-from brainshtorm.models import NicheAssessment
+from brainshtorm.local_practice import (
+    LocalPracticeProfile,
+    build_local_practice_queries,
+    calculate_practice_economics,
+    generate_local_practice_ai_report,
+    render_local_practice_report,
+)
+from brainshtorm.models import MarketMetrics, NicheAssessment
 from brainshtorm.opportunity import apply_product_recommendation
 from brainshtorm.project_types import (
     AI_PROJECT_TYPE_SOURCE,
@@ -47,6 +56,7 @@ REGION_OPTIONS = {
     "Россия": [],
     "Москва": ["213"],
     "Санкт-Петербург": ["2"],
+    "Рыбинск": ["10839"],
     "Без региона": [],
 }
 
@@ -55,7 +65,15 @@ DEFAULT_SERP_REGION_ID = "225"
 
 PROJECT_TYPES = PROJECT_TYPE_OPTIONS
 
-AI_PROVIDERS = ["GPT", "DeepSeek"]
+AI_PROVIDERS = ["OpenRouter", "GPT", "DeepSeek"]
+ANALYSIS_MODES = ["Поиск ниш", "Локальная практика"]
+
+
+@dataclass(frozen=True)
+class RegionContext:
+    region_ids: tuple[str, ...]
+    serp_region_id: str
+    label: str
 
 
 APP_STYLE = """
@@ -91,17 +109,92 @@ def run_app() -> None:
         folder_id = st.text_input("Yandex folder ID", value=settings.folder_id, type="password")
         st.caption("Ключи и параметры сохраняются локально в профиле Windows и не попадают в git.")
 
+        st.header("Сценарий")
+        analysis_mode = st.selectbox(
+            "Что анализируем",
+            ANALYSIS_MODES,
+            index=_option_index(ANALYSIS_MODES, settings.analysis_mode),
+        )
+        if analysis_mode == "Локальная практика":
+            local_service = st.text_input(
+                "Услуга или специалист",
+                value=settings.local_service,
+                placeholder="детский нейропсихолог",
+            )
+            local_audience = st.text_input(
+                "Основная аудитория",
+                value=settings.local_audience,
+                placeholder="родители детей 5-10 лет",
+            )
+            local_city = st.text_input(
+                "Город",
+                value=settings.local_city,
+                placeholder="Рыбинск",
+            )
+            with st.expander("Экономика практики"):
+                local_session_price_rub = st.number_input(
+                    "Цена занятия, ₽",
+                    min_value=0,
+                    value=max(0, settings.local_session_price_rub),
+                    step=100,
+                )
+                local_diagnostic_price_rub = st.number_input(
+                    "Цена диагностики, ₽",
+                    min_value=0,
+                    value=max(0, settings.local_diagnostic_price_rub),
+                    step=100,
+                )
+                local_course_sessions = st.number_input(
+                    "Занятий в курсе",
+                    min_value=1,
+                    value=max(1, settings.local_course_sessions),
+                    step=1,
+                )
+                local_room_cost_per_visit_rub = st.number_input(
+                    "Кабинет на визит, ₽",
+                    min_value=0,
+                    value=max(0, settings.local_room_cost_per_visit_rub),
+                    step=100,
+                )
+                local_ad_test_budget_rub = st.number_input(
+                    "Тест рекламы в месяц, ₽",
+                    min_value=0,
+                    value=max(0, settings.local_ad_test_budget_rub),
+                    step=1000,
+                )
+        else:
+            local_service = settings.local_service
+            local_audience = settings.local_audience
+            local_city = settings.local_city
+            local_session_price_rub = settings.local_session_price_rub
+            local_diagnostic_price_rub = settings.local_diagnostic_price_rub
+            local_course_sessions = settings.local_course_sessions
+            local_room_cost_per_visit_rub = settings.local_room_cost_per_visit_rub
+            local_ad_test_budget_rub = settings.local_ad_test_budget_rub
+
         st.header("Параметры пачки")
-        region_options = list(REGION_OPTIONS.keys())
+        known_local_region = (
+            _known_local_region_label(local_city)
+            if analysis_mode == "Локальная практика"
+            else None
+        )
+        region_options = [known_local_region] if known_local_region else list(REGION_OPTIONS.keys())
         region_label = st.selectbox(
             "Регион",
             region_options,
             index=_option_index(region_options, settings.region_label),
+            disabled=bool(known_local_region),
         )
         custom_region_id = st.text_input(
             "ID региона Яндекса, если нужен другой",
-            value=settings.custom_region_id,
+            value="" if known_local_region else settings.custom_region_id,
+            disabled=bool(known_local_region),
         )
+        if known_local_region:
+            st.caption(
+                f"Регион определен по городу автоматически: {known_local_region}, "
+                f"ID {REGION_OPTIONS[known_local_region][0]}."
+            )
         budget_rub = st.number_input(
             "Бюджет запуска, ₽",
             min_value=1000,
@@ -114,12 +207,15 @@ def run_app() -> None:
             max_value=10,
             value=_clamp(settings.max_difficulty, 1, 10),
         )
-        project_options = list(PROJECT_TYPES.keys())
+        project_options = _project_type_options(analysis_mode)
         project_label = st.selectbox(
             "Тип проекта",
             project_options,
             index=_option_index(project_options, settings.project_label),
+            disabled=analysis_mode == "Локальная практика",
         )
+        if analysis_mode == "Локальная практика":
+            st.caption("Для частной практики тип фиксирован: сервис/услуга.")
         num_phrases = st.slider(
             "Фраз Wordstat на направление",
             10,
@@ -158,7 +254,8 @@ def run_app() -> None:
         st.header("AI-вердикт")
         enable_ai_project_type = st.checkbox(
             "Уточнять авто-тип проекта через AI",
-            value=settings.enable_ai_project_type,
+            value=False if analysis_mode == "Локальная практика" else settings.enable_ai_project_type,
+            disabled=analysis_mode == "Локальная практика",
         )
         enable_ai = st.checkbox(
             "Генерировать AI-вердикт финалистов",
@@ -169,15 +266,31 @@ def run_app() -> None:
             AI_PROVIDERS,
             index=_option_index(AI_PROVIDERS, settings.ai_provider),
         )
-        if ai_provider == "GPT":
+        if ai_provider == "OpenRouter":
+            openrouter_api_key = st.text_input(
+                "OpenRouter API key",
+                value=settings.openrouter_api_key,
+                type="password",
+            )
+            openrouter_model = st.text_input(
+                "OpenRouter модель",
+                value=settings.openrouter_model,
+            )
+            openai_api_key = settings.openai_api_key
+            deepseek_api_key = settings.deepseek_api_key
+            openai_model = settings.openai_model
+            deepseek_model = settings.deepseek_model
+        elif ai_provider == "GPT":
             openai_api_key = st.text_input(
                 "OpenAI API key",
                 value=settings.openai_api_key,
                 type="password",
             )
             deepseek_api_key = settings.deepseek_api_key
+            openrouter_api_key = settings.openrouter_api_key
             openai_model = st.text_input("GPT модель", value=settings.openai_model)
             deepseek_model = settings.deepseek_model
+            openrouter_model = settings.openrouter_model
         else:
             deepseek_api_key = st.text_input(
                 "DeepSeek API key",
@@ -185,8 +298,10 @@ def run_app() -> None:
                 type="password",
             )
             openai_api_key = settings.openai_api_key
+            openrouter_api_key = settings.openrouter_api_key
             deepseek_model = st.text_input("DeepSeek модель", value=settings.deepseek_model)
             openai_model = settings.openai_model
+            openrouter_model = settings.openrouter_model
         ai_finalists = st.slider(
             "Финалистов для AI",
             1,
@@ -194,11 +309,21 @@ def run_app() -> None:
             _clamp(settings.ai_finalists, 1, 20),
         )
 
+    pasted_label = (
+        "Дополнительные запросы родителей, по одному на строку"
+        if analysis_mode == "Локальная практика"
+        else "Список направлений, по одному на строку"
+    )
+    pasted_placeholder = (
+        "страх школы у ребенка\nребенок быстро устает на уроках"
+        if analysis_mode == "Локальная практика"
+        else "ремонт роботов пылесосов\nкурсы нейросетей\nзапчасти для квадроциклов"
+    )
     pasted = st.text_area(
-        "Список направлений, по одному на строку",
+        pasted_label,
         value=settings.pasted_directions,
         height=220,
-        placeholder="ремонт роботов пылесосов\nкурсы нейросетей\nзапчасти для квадроциклов",
+        placeholder=pasted_placeholder,
     )
 
     current_settings = AppSettings(
@@ -221,9 +346,20 @@ def run_app() -> None:
         ai_provider=ai_provider,
         openai_api_key=openai_api_key,
         deepseek_api_key=deepseek_api_key,
+        openrouter_api_key=openrouter_api_key,
         openai_model=openai_model,
         deepseek_model=deepseek_model,
+        openrouter_model=openrouter_model,
         ai_finalists=int(ai_finalists),
+        analysis_mode=analysis_mode,
+        local_service=local_service,
+        local_audience=local_audience,
+        local_city=local_city,
+        local_session_price_rub=int(local_session_price_rub),
+        local_diagnostic_price_rub=int(local_diagnostic_price_rub),
+        local_course_sessions=int(local_course_sessions),
+        local_room_cost_per_visit_rub=int(local_room_cost_per_visit_rub),
+        local_ad_test_budget_rub=int(local_ad_test_budget_rub),
         pasted_directions=pasted,
     )
 
@@ -243,41 +379,121 @@ def run_app() -> None:
     _save_user_settings(current_settings, show_success=False)
 
     try:
+        practice_profile = None
+        practice_economics = None
+        direction_text = pasted
+        direction_region = region_label
+        selected_project_type = PROJECT_TYPES[project_label]
+        if analysis_mode == "Локальная практика":
+            practice_profile = LocalPracticeProfile(
+                service=local_service,
+                audience=local_audience,
+                city=local_city,
+                session_price_rub=int(local_session_price_rub),
+                diagnostic_price_rub=int(local_diagnostic_price_rub),
+                course_sessions=int(local_course_sessions),
+                room_cost_per_visit_rub=int(local_room_cost_per_visit_rub),
+                ad_test_budget_rub=int(local_ad_test_budget_rub),
+            )
+            practice_economics = calculate_practice_economics(practice_profile)
+            queries = build_local_practice_queries(
+                practice_profile,
+                extra_queries=pasted.splitlines(),
+            )
+            direction_text = "\n".join(queries)
+            direction_region = local_city
+            selected_project_type = "service"
+            st.info(f"Автоматически сформировано запросов для проверки: {len(queries)}")
+
         directions = parse_pasted_directions(
-            pasted,
-            region=region_label,
+            direction_text,
+            region=direction_region,
             budget_rub=int(budget_rub),
             max_difficulty=int(max_difficulty),
-            project_type=PROJECT_TYPES[project_label],
+            project_type=selected_project_type,
         )
-        region_ids = _selected_region_ids(region_label, custom_region_id)
+        region_context = _resolve_region_context(
+            analysis_mode=analysis_mode,
+            local_city=local_city,
+            region_label=region_label,
+            custom_region_id=custom_region_id,
+        )
+        data_source = _practice_data_source_label(provider_name)
+        if practice_profile:
+            st.info(
+                f"Источник: {data_source}. Эффективный регион: {region_context.label}."
+            )
         assessments = _run_analysis(
             provider_name=provider_name,
             api_key=api_key,
             folder_id=folder_id,
-            region_ids=region_ids,
+            region_ids=list(region_context.region_ids),
             num_phrases=num_phrases,
             enable_serp=enable_serp,
-            serp_region_id=_selected_serp_region_id(region_label, custom_region_id),
+            serp_region_id=region_context.serp_region_id,
             serp_finalists=int(serp_finalists),
             serp_results=int(serp_results),
             enable_cluster_serp=enable_cluster_serp,
             keyword_clusters=int(keyword_clusters),
-            enable_ai_project_type=enable_ai_project_type,
-            enable_ai=enable_ai,
+            enable_ai_project_type=enable_ai_project_type and practice_profile is None,
+            enable_ai=enable_ai and practice_profile is None,
             ai_provider=ai_provider,
             openai_api_key=openai_api_key,
             deepseek_api_key=deepseek_api_key,
+            openrouter_api_key=openrouter_api_key,
             openai_model=openai_model,
             deepseek_model=deepseek_model,
+            openrouter_model=openrouter_model,
             ai_finalists=int(ai_finalists),
             directions=directions,
+            estimated_launch_budget_override=(
+                practice_economics.minimum_test_reserve_rub
+                if practice_economics is not None
+                else None
+            ),
         )
+        practice_report = None
+        if practice_profile:
+            economics = practice_economics
+            assert economics is not None
+            ai_report = None
+            if enable_ai:
+                ai_report, ai_error = _generate_practice_ai_report_safely(
+                    practice_profile,
+                    economics,
+                    assessments,
+                    provider=ai_provider,
+                    openai_api_key=openai_api_key,
+                    deepseek_api_key=deepseek_api_key,
+                    openrouter_api_key=openrouter_api_key,
+                    openai_model=openai_model,
+                    deepseek_model=deepseek_model,
+                    openrouter_model=openrouter_model,
+                    data_source=data_source,
+                    effective_region=region_context.label,
+                )
+                if ai_error:
+                    st.warning(
+                        "AI-синтез не сработал; Wordstat, SERP и экономика сохранены в отчете. "
+                        f"Причина: {ai_error}"
+                    )
+            practice_report = render_local_practice_report(
+                practice_profile,
+                economics,
+                assessments,
+                ai_report=ai_report,
+                data_source=data_source,
+                effective_region=region_context.label,
+            )
     except (ValueError, YandexWordstatError, YandexSerpError, AiError) as exc:
         st.error(str(exc))
         return
 
-    _render_results(assessments)
+    _render_results(
+        assessments,
+        summary_report=practice_report,
+        summary_only=practice_profile is not None,
+    )
 
 
 def _run_analysis(
@@ -298,10 +514,13 @@ def _run_analysis(
     ai_provider: str,
     openai_api_key: str,
     deepseek_api_key: str,
+    openrouter_api_key: str,
     openai_model: str,
     deepseek_model: str,
+    openrouter_model: str,
     ai_finalists: int,
     directions,
+    estimated_launch_budget_override: int | None = None,
 ) -> list[NicheAssessment]:
     if provider_name == "Demo":
         provider = DemoMarketDataProvider()
@@ -316,7 +535,12 @@ def _run_analysis(
     progress = st.progress(0)
     raw_items = []
     for index, direction in enumerate(directions, start=1):
-        raw_items.append((direction, provider.metrics_for(direction)))
+        metrics = provider.metrics_for(direction)
+        metrics = _override_estimated_launch_budget(
+            metrics,
+            estimated_launch_budget_override,
+        )
+        raw_items.append((direction, metrics))
         progress.progress(index / len(directions))
     ai_project_type_choices = {}
     if enable_ai_project_type and any(
@@ -327,8 +551,10 @@ def _run_analysis(
                 provider=ai_provider,
                 openai_api_key=openai_api_key,
                 deepseek_api_key=deepseek_api_key,
+                openrouter_api_key=openrouter_api_key,
                 openai_model=openai_model,
                 deepseek_model=deepseek_model,
+                openrouter_model=openrouter_model,
             )
             ai_project_type_choices = generate_project_type_choices(raw_items, ai_client)
         except (AiError, ValueError, TypeError) as exc:
@@ -359,8 +585,10 @@ def _run_analysis(
             provider=ai_provider,
             openai_api_key=openai_api_key,
             deepseek_api_key=deepseek_api_key,
+            openrouter_api_key=openrouter_api_key,
             openai_model=openai_model,
             deepseek_model=deepseek_model,
+            openrouter_model=openrouter_model,
             finalists=ai_finalists,
         )
 
@@ -453,16 +681,20 @@ def _apply_ai_to_finalists(
     provider: str,
     openai_api_key: str,
     deepseek_api_key: str,
+    openrouter_api_key: str,
     openai_model: str,
     deepseek_model: str,
+    openrouter_model: str,
     finalists: int,
 ) -> list[NicheAssessment]:
     client = _build_ai_client(
         provider=provider,
         openai_api_key=openai_api_key,
         deepseek_api_key=deepseek_api_key,
+        openrouter_api_key=openrouter_api_key,
         openai_model=openai_model,
         deepseek_model=deepseek_model,
+        openrouter_model=openrouter_model,
     )
     finalist_count = min(max(1, finalists), len(assessments))
     ai_progress = st.progress(0)
@@ -480,14 +712,56 @@ def _build_ai_client(
     provider: str,
     openai_api_key: str,
     deepseek_api_key: str,
+    openrouter_api_key: str,
     openai_model: str,
     deepseek_model: str,
+    openrouter_model: str,
 ):
     if provider == "GPT":
         return OpenAiClient(api_key=openai_api_key, model=openai_model)
     if provider == "DeepSeek":
         return DeepSeekClient(api_key=deepseek_api_key, model=deepseek_model)
+    if provider == "OpenRouter":
+        return OpenRouterClient(api_key=openrouter_api_key, model=openrouter_model)
     raise ValueError(f"Неподдерживаемый AI-провайдер: {provider}")
+
+
+def _generate_practice_ai_report_safely(
+    profile,
+    economics,
+    assessments,
+    *,
+    provider: str,
+    openai_api_key: str,
+    deepseek_api_key: str,
+    openrouter_api_key: str,
+    openai_model: str,
+    deepseek_model: str,
+    openrouter_model: str,
+    data_source: str,
+    effective_region: str,
+) -> tuple[str | None, str | None]:
+    try:
+        client = _build_ai_client(
+            provider=provider,
+            openai_api_key=openai_api_key,
+            deepseek_api_key=deepseek_api_key,
+            openrouter_api_key=openrouter_api_key,
+            openai_model=openai_model,
+            deepseek_model=deepseek_model,
+            openrouter_model=openrouter_model,
+        )
+        report = generate_local_practice_ai_report(
+            profile,
+            economics,
+            assessments,
+            client,
+            data_source=data_source,
+            effective_region=effective_region,
+        )
+        return report, None
+    except (AiError, OSError, ValueError, TypeError, RuntimeError) as exc:
+        return None, str(exc)
 
 
 def _build_serp_provider(
@@ -520,13 +794,26 @@ def _save_user_settings(settings: AppSettings, *, show_success: bool) -> None:
         st.success(f"Параметры сохранены: {settings_path}")
 
 
-def _render_results(assessments: list[NicheAssessment]) -> None:
+def _render_results(
+    assessments: list[NicheAssessment],
+    *,
+    summary_report: str | None = None,
+    summary_only: bool = False,
+) -> None:
     st.subheader("Результат")
+    if summary_report:
+        st.markdown(summary_report)
     rows = [_assessment_row(item) for item in assessments]
-    st.dataframe(rows, width="stretch", hide_index=True)
+    if not summary_only:
+        st.dataframe(rows, width="stretch", hide_index=True)
 
     csv_text = _rows_to_csv(rows)
-    report = render_markdown_report(assessments)
+    details_report = "" if summary_only else render_markdown_report(assessments)
+    report, visible_details = _compose_reports(
+        details_report,
+        summary_report,
+        summary_only=summary_only,
+    )
 
     left, right = st.columns(2)
     with left:
@@ -546,7 +833,22 @@ def _render_results(assessments: list[NicheAssessment]) -> None:
             width="stretch",
         )
 
-    st.markdown(report)
+    if visible_details:
+        st.markdown(visible_details)
+
+
+def _compose_reports(
+    details_report: str,
+    summary_report: str | None,
+    *,
+    summary_only: bool = False,
+) -> tuple[str, str]:
+    if not summary_report:
+        return details_report, details_report
+    if summary_only:
+        return summary_report, ""
+    combined = f"{summary_report.rstrip()}\n\n---\n\n{details_report}"
+    return combined, details_report
 
 
 def _assessment_row(assessment: NicheAssessment) -> dict[str, object]:
@@ -559,9 +861,9 @@ def _assessment_row(assessment: NicheAssessment) -> dict[str, object]:
         "project_type": project_type_label(assessment.direction.project_type),
         "score": assessment.score,
         "verdict": assessment.verdict,
-        "score_confidence": score_breakdown.confidence if score_breakdown else "",
+        "score_confidence": score_breakdown.confidence if score_breakdown else None,
         "evidence_count": len(evidence_items),
-        "opportunity_score": recommendation.opportunity_score if recommendation else "",
+        "opportunity_score": recommendation.opportunity_score if recommendation else None,
         "launch": recommendation.product_title if recommendation else "",
         "first_test": recommendation.first_test if recommendation else "",
         "demand": assessment.metrics.demand,
@@ -569,9 +871,9 @@ def _assessment_row(assessment: NicheAssessment) -> dict[str, object]:
         "competition": assessment.metrics.competition,
         "budget_fit": assessment.metrics.estimated_launch_budget,
         "difficulty": assessment.metrics.estimated_difficulty,
-        "serp_difficulty": serp.estimated_difficulty if serp else "",
-        "serp_delta": serp.score_delta if serp else "",
-        "offer_gap": getattr(serp, "offer_gap_score", "") if serp else "",
+        "serp_difficulty": serp.estimated_difficulty if serp else None,
+        "serp_delta": serp.score_delta if serp else None,
+        "offer_gap": getattr(serp, "offer_gap_score", None) if serp else None,
         "serp_weak_spots": _short_text("; ".join(getattr(serp, "weak_spots", [])) if serp else ""),
         "top_domains": ", ".join(serp.top_domains) if serp else "",
         "keyword_clusters": _cluster_summary(assessment),
@@ -605,6 +907,80 @@ def _selected_serp_region_id(region_label: str, custom_region_id: str) -> str:
     if region_ids:
         return region_ids[0]
     return DEFAULT_SERP_REGION_ID
+
+
+def _project_type_options(analysis_mode: str) -> list[str]:
+    if analysis_mode == "Локальная практика":
+        return ["Сервис/услуга"]
+    return list(PROJECT_TYPES.keys())
+
+
+def _known_local_region_label(city: str) -> str | None:
+    normalized_city = city.strip().casefold()
+    for label, region_ids in REGION_OPTIONS.items():
+        if region_ids and label.casefold() == normalized_city:
+            return label
+    return None
+
+
+def _resolve_region_context(
+    *,
+    analysis_mode: str,
+    local_city: str,
+    region_label: str,
+    custom_region_id: str,
+) -> RegionContext:
+    custom = custom_region_id.strip()
+    if custom and not custom.isdigit():
+        raise ValueError("ID региона Яндекса должен состоять из цифр")
+
+    if analysis_mode == "Локальная практика":
+        known_label = _known_local_region_label(local_city)
+        if known_label:
+            region_id = REGION_OPTIONS[known_label][0]
+            return RegionContext(
+                region_ids=(region_id,),
+                serp_region_id=region_id,
+                label=f"{known_label} (Yandex ID {region_id})",
+            )
+        if not custom:
+            raise ValueError(
+                f"Для города «{local_city.strip()}» укажите ID региона Яндекса, "
+                "чтобы Wordstat и SERP не анализировали другой регион"
+            )
+        return RegionContext(
+            region_ids=(custom,),
+            serp_region_id=custom,
+            label=f"{local_city.strip()} (Yandex ID {custom})",
+        )
+
+    region_ids = tuple(_selected_region_ids(region_label, custom))
+    serp_region_id = _selected_serp_region_id(region_label, custom)
+    if custom:
+        label = f"{region_label} (Yandex ID {custom})"
+    elif region_ids:
+        label = f"{region_label} (Yandex ID {region_ids[0]})"
+    else:
+        label = f"{region_label} (без фильтра Wordstat; SERP ID {serp_region_id})"
+    return RegionContext(region_ids=region_ids, serp_region_id=serp_region_id, label=label)
+
+
+def _practice_data_source_label(provider_name: str) -> str:
+    if provider_name == "Demo":
+        return "Demo (синтетические данные; не Wordstat и не реальная выдача)"
+    return "Yandex Wordstat API + Yandex Web Search"
+
+
+def _override_estimated_launch_budget(
+    metrics: MarketMetrics,
+    estimated_launch_budget: int | None,
+) -> MarketMetrics:
+    if estimated_launch_budget is None:
+        return metrics
+    return replace(
+        metrics,
+        estimated_launch_budget=max(0, int(estimated_launch_budget)),
+    )
 
 
 def _short_text(value: str | None, *, limit: int = 180) -> str:

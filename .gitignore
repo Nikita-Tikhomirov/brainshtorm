@@ -5,3 +5,4 @@ __pycache__/
 out/
 .playwright-mcp/
 streamlit-initial.png
+harness/

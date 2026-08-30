@@ -1,6 +1,14 @@
 import json
 
-from brainshtorm.settings import AppSettings, default_settings_path, load_settings, save_settings
+import pytest
+
+from brainshtorm.settings import (
+    AppSettings,
+    default_settings_path,
+    load_settings,
+    protect_secret,
+    save_settings,
+)
 
 
 def test_load_missing_settings_returns_defaults(tmp_path):
@@ -38,9 +46,20 @@ def test_save_and_load_settings_roundtrip_with_protected_key(tmp_path):
         ai_provider="DeepSeek",
         openai_api_key="openai-secret",
         deepseek_api_key="deepseek-secret",
+        openrouter_api_key="openrouter-secret",
         openai_model="gpt-5.5",
         deepseek_model="deepseek-v4-pro",
+        openrouter_model="anthropic/claude-opus-5",
         ai_finalists=5,
+        analysis_mode="Локальная практика",
+        local_service="детский нейропсихолог",
+        local_audience="родители детей 5-10 лет",
+        local_city="Рыбинск",
+        local_session_price_rub=1500,
+        local_diagnostic_price_rub=3000,
+        local_course_sessions=8,
+        local_room_cost_per_visit_rub=500,
+        local_ad_test_budget_rub=15000,
         pasted_directions="ремонт\nкурсы",
     )
 
@@ -51,9 +70,11 @@ def test_save_and_load_settings_roundtrip_with_protected_key(tmp_path):
     assert "secret-token" not in raw_text
     assert "openai-secret" not in raw_text
     assert "deepseek-secret" not in raw_text
+    assert "openrouter-secret" not in raw_text
     assert raw_payload["api_key"].startswith("protected:")
     assert raw_payload["openai_api_key"].startswith("protected:")
     assert raw_payload["deepseek_api_key"].startswith("protected:")
+    assert raw_payload["openrouter_api_key"].startswith("protected:")
     assert load_settings(path=settings_path, unprotector=unprotect) == settings
 
 
@@ -69,3 +90,14 @@ def test_default_settings_path_is_outside_project():
 
     assert path.name == "settings.json"
     assert path.parent.name == ".brainshtorm"
+
+
+def test_windows_dpapi_failure_never_falls_back_to_reversible_base64(monkeypatch):
+    monkeypatch.setattr("brainshtorm.settings.sys.platform", "win32")
+    monkeypatch.setattr(
+        "brainshtorm.settings._dpapi_protect",
+        lambda _value: (_ for _ in ()).throw(OSError("dpapi unavailable")),
+    )
+
+    with pytest.raises(OSError, match="DPAPI"):
+        protect_secret("must-not-be-base64")

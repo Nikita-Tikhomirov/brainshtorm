@@ -137,6 +137,77 @@ def test_analyze_serp_results_marks_weak_offer_serp_as_opportunity_gap():
     assert any("информационные" in item for item in analysis.competitor_types)
 
 
+def test_local_practice_offer_gap_uses_service_signals_not_delivery_or_stock():
+    results = [
+        SerpResult(
+            title="Детский нейропсихолог в Рыбинске — цена и запись",
+            url="https://practice.example/rybinsk",
+            domain="practice.example",
+            snippet="Дипломированный специалист, диагностика и занятия. Прием в центре, отзывы родителей.",
+        ),
+        SerpResult(
+            title="Нейропсихолог для детей в Рыбинске",
+            url="https://center.example/neuro",
+            domain="center.example",
+            snippet="Консультация, программа коррекции, адрес кабинета и стоимость занятий.",
+        ),
+    ]
+
+    analysis = analyze_serp_results(
+        query="детский нейропсихолог Рыбинск",
+        results=results,
+        max_difficulty=7,
+    )
+
+    assert analysis.offer_signal_score >= 0.75
+    assert "квалификация" in analysis.offer_signals
+    assert "формат работы" in analysis.offer_signals
+    assert "локация" in analysis.offer_signals
+    assert "доставка" not in analysis.missing_offer_signals
+    assert "наличие" not in analysis.missing_offer_signals
+    assert any("сервисные сайты" in item for item in analysis.competitor_types)
+
+
+def test_parent_problem_query_uses_expertise_signals_instead_of_ecommerce_signals():
+    results = [
+        SerpResult(
+            title="Почему ребенок плохо учится",
+            url="https://psychology.example/article",
+            domain="psychology.example",
+            snippet="Психолог с дипломом и опытом объясняет причины трудностей обучения и план диагностики внимания.",
+        )
+    ]
+
+    analysis = analyze_serp_results(
+        query="ребенок плохо учится",
+        results=results,
+        max_difficulty=7,
+    )
+
+    assert "квалификация" in analysis.offer_signals
+    assert "формат работы" in analysis.offer_signals
+    assert "доставка" not in analysis.missing_offer_signals
+    assert "наличие" not in analysis.missing_offer_signals
+
+
+def test_query_words_do_not_fake_professional_qualification_or_location():
+    analysis = analyze_serp_results(
+        query="детский психолог Рыбинск",
+        results=[
+            SerpResult(
+                title="Детский психолог Рыбинск",
+                url="https://example.test/psychologist",
+                domain="example.test",
+                snippet="Психолог проводит консультации для детей.",
+            )
+        ],
+        max_difficulty=7,
+    )
+
+    assert "квалификация" not in analysis.offer_signals
+    assert "локация" not in analysis.offer_signals
+
+
 def test_apply_serp_analysis_adjusts_assessment_verdict_and_risks():
     direction = DirectionInput(
         direction="ремонт роботов пылесосов",
@@ -278,3 +349,14 @@ def test_apply_keyword_cluster_serp_analysis_attaches_clusters_and_adjusts_score
     assert adjusted.verdict == REVIEW
     assert "Кластеры" in adjusted.explanation
     assert any("Кластеры" in risk for risk in adjusted.risks)
+
+
+def test_ecommerce_memory_query_keeps_product_offer_signals():
+    analysis = analyze_serp_results(
+        query="карта памяти купить",
+        results=parse_yandex_xml_results(SERP_XML),
+        max_difficulty=7,
+    )
+
+    assert "доставка" in analysis.offer_signals or "доставка" in analysis.missing_offer_signals
+    assert "наличие" in analysis.offer_signals or "наличие" in analysis.missing_offer_signals

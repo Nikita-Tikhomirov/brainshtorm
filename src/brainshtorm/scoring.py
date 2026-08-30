@@ -291,22 +291,28 @@ def _metric_evidence(direction: DirectionInput, metrics: MarketMetrics) -> list[
             details=["Commercial modifiers in collected phrases."],
         ),
         EvidenceItem(
-            source="Provider metrics",
-            claim="Конкуренция",
+            source="Расчетная модель",
+            claim="Оценочная конкуренция",
             value=f"{metrics.competition:.2f}",
-            details=["Used as inverse competition_fit in score formula."],
+            details=["Эвристика поверх метрик; не прямой факт Wordstat или SERP."],
         ),
         EvidenceItem(
-            source="Provider metrics",
-            claim="Бюджет",
+            source="Расчетная модель",
+            claim="Оценочный бюджет или резерв",
             value=f"{metrics.estimated_launch_budget} ₽",
-            details=[f"user_limit={direction.budget_rub} ₽"],
+            details=[
+                f"user_limit={direction.budget_rub} ₽",
+                "Эвристика сценария; не значение из API.",
+            ],
         ),
         EvidenceItem(
-            source="Provider metrics",
-            claim="Сложность",
+            source="Расчетная модель",
+            claim="Оценочная сложность",
             value=f"{metrics.estimated_difficulty}/10",
-            details=[f"user_limit={direction.max_difficulty}/10"],
+            details=[
+                f"user_limit={direction.max_difficulty}/10",
+                "Расчетная шкала; не значение из API.",
+            ],
         ),
     ]
 

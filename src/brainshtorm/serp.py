@@ -60,7 +60,38 @@ OFFER_SIGNAL_GROUPS = {
     "наличие": ("в наличии", "каталог", "выбор"),
     "сервис": ("выезд", "мастер", "диагностик", "ремонт", "сервис"),
     "действие": ("заказать", "купить", "заявк", "консультац", "расчет"),
+    "квалификация": ("диплом", "образован", "квалификац", "опыт", "стаж", "сертификат"),
+    "формат работы": ("занят", "программ", "курс", "план", "коррекц"),
+    "локация": ("адрес", "кабинет", "филиал", "улица", "очный прием", "очно"),
 }
+
+DEFAULT_OFFER_SIGNALS = (
+    "цена",
+    "гарантия",
+    "скорость",
+    "доставка",
+    "отзывы",
+    "наличие",
+    "сервис",
+    "действие",
+)
+
+LOCAL_SERVICE_OFFER_SIGNALS = (
+    "цена",
+    "отзывы",
+    "сервис",
+    "действие",
+    "квалификация",
+    "формат работы",
+    "локация",
+)
+
+PARENT_GUIDANCE_OFFER_SIGNALS = (
+    "сервис",
+    "действие",
+    "квалификация",
+    "формат работы",
+)
 
 INFO_INTENT_TERMS = (
     "как ",
@@ -81,6 +112,49 @@ LOCAL_SERVICE_TERMS = (
     "диагностик",
     "студия",
     "центр",
+    "психолог",
+    "нейропсихолог",
+    "консультац",
+    "коррекц",
+    "занят",
+    "подготовк",
+)
+
+PROFESSIONAL_SERVICE_TERMS = (
+    "психолог",
+    "нейропсихолог",
+    "консультац",
+    "коррекц",
+    "занят",
+    "подготовк",
+)
+
+EXPLICIT_CHILD_PROBLEM_TERMS = (
+    "сдвг",
+    "дисграф",
+    "дислекс",
+    "гиперактив",
+)
+
+CHILD_CONTEXT_TERMS = (
+    "ребенок",
+    "ребёнок",
+    "детей",
+    "детск",
+    "школьн",
+)
+
+BROAD_PARENT_PROBLEM_TERMS = (
+    "неуспева",
+    "обучени",
+    "внимани",
+    "памят",
+    "учит",
+    "читает",
+    "неусид",
+    "трудност",
+    "страх",
+    "готов к школе",
 )
 
 
@@ -503,31 +577,36 @@ def _analyze_offer_layer(
     marketplace_count: int,
 ) -> _OfferAnalysis:
     if not results:
+        expected_signals = _expected_offer_signals(query)
         return _OfferAnalysis(
             offer_signal_score=0.0,
             offer_gap_score=0.0,
             competitor_types=[],
             offer_signals=[],
-            missing_offer_signals=list(OFFER_SIGNAL_GROUPS),
+            missing_offer_signals=list(expected_signals),
             weak_spots=["Нет результатов SERP для автоматического разбора офферов."],
         )
 
     total = len(results)
     query_tokens = _important_tokens(query)
     result_texts = [_result_text(result) for result in results]
+    expected_signals = _expected_offer_signals(query)
     present_signals = [
         label
-        for label, terms in OFFER_SIGNAL_GROUPS.items()
+        for label in expected_signals
+        for terms in [OFFER_SIGNAL_GROUPS[label]]
         if any(_has_any_term(text, terms) for text in result_texts)
     ]
-    signal_result_share = sum(1 for text in result_texts if _has_any_offer_signal(text)) / total
-    signal_coverage = len(present_signals) / max(1, len(OFFER_SIGNAL_GROUPS))
+    signal_result_share = sum(
+        1 for text in result_texts if _has_any_offer_signal(text, expected_signals)
+    ) / total
+    signal_coverage = len(present_signals) / max(1, len(expected_signals))
     offer_signal_score = round(min(1.0, signal_coverage * 0.65 + signal_result_share * 0.35), 2)
 
     exact_match_share = _exact_match_share(query, query_tokens, result_texts)
     info_count = sum(1 for text in result_texts if _has_any_term(text, INFO_INTENT_TERMS))
     competitor_types = _competitor_types(results, result_texts)
-    missing_signals = [label for label in OFFER_SIGNAL_GROUPS if label not in present_signals]
+    missing_signals = [label for label in expected_signals if label not in present_signals]
 
     middleman_share = min(1.0, (aggregator_count + marketplace_count) / total)
     info_share = info_count / total
@@ -574,8 +653,24 @@ def _has_any_term(text: str, terms: tuple[str, ...]) -> bool:
     return any(term in text for term in terms)
 
 
-def _has_any_offer_signal(text: str) -> bool:
-    return any(_has_any_term(text, terms) for terms in OFFER_SIGNAL_GROUPS.values())
+def _has_any_offer_signal(text: str, signal_labels: tuple[str, ...]) -> bool:
+    return any(
+        _has_any_term(text, OFFER_SIGNAL_GROUPS[label])
+        for label in signal_labels
+    )
+
+
+def _expected_offer_signals(query: str) -> tuple[str, ...]:
+    normalized_query = query.lower()
+    if _has_any_term(normalized_query, PROFESSIONAL_SERVICE_TERMS):
+        return LOCAL_SERVICE_OFFER_SIGNALS
+    is_child_problem = _has_any_term(normalized_query, EXPLICIT_CHILD_PROBLEM_TERMS) or (
+        _has_any_term(normalized_query, CHILD_CONTEXT_TERMS)
+        and _has_any_term(normalized_query, BROAD_PARENT_PROBLEM_TERMS)
+    )
+    if is_child_problem:
+        return PARENT_GUIDANCE_OFFER_SIGNALS
+    return DEFAULT_OFFER_SIGNALS
 
 
 def _exact_match_share(query: str, query_tokens: list[str], result_texts: list[str]) -> float:

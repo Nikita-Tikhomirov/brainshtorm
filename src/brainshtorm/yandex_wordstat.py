@@ -234,6 +234,15 @@ def _commercial_intent(direction: str, top_response: dict[str, Any]) -> float:
         "подбор",
         "курс",
         "обучение",
+        "консультац",
+        "запис",
+        "прием",
+        "приём",
+        "диагностик",
+        "коррекц",
+        "занят",
+        "психолог",
+        "нейропсихолог",
     ]
     matches = sum(1 for term in hot_terms if term in text)
     return round(max(0.35, min(0.95, 0.45 + matches * 0.18)), 2)

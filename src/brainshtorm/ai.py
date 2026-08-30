@@ -79,6 +79,47 @@ class OpenAiClient:
         return _extract_openai_text(response)
 
 
+class OpenRouterClient:
+    def __init__(
+        self,
+        *,
+        api_key: str,
+        model: str = "anthropic/claude-opus-5",
+        base_url: str = "https://openrouter.ai/api/v1",
+        timeout: int = 180,
+        transport: AiTransport | None = None,
+    ) -> None:
+        if not api_key.strip():
+            raise ValueError("OpenRouter API key is required")
+        if not model.strip():
+            raise ValueError("OpenRouter model is required")
+        self.api_key = api_key.strip()
+        self.model = model.strip()
+        self.base_url = base_url.strip().rstrip("/")
+        self.timeout = timeout
+        self.transport = transport or _urllib_transport
+
+    def generate(self, prompt: str, *, max_output_tokens: int = 900) -> str:
+        response = self.transport(
+            f"{self.base_url}/chat/completions",
+            {
+                "model": self.model,
+                "messages": [
+                    {"role": "system", "content": AI_SYSTEM_INSTRUCTIONS},
+                    {"role": "user", "content": prompt},
+                ],
+                "stream": False,
+                "max_completion_tokens": max_output_tokens,
+            },
+            {
+                "Authorization": f"Bearer {self.api_key}",
+                "X-OpenRouter-Title": "Runet Niche Analyzer",
+            },
+            self.timeout,
+        )
+        return _extract_chat_completion_text(response, provider="OpenRouter")
+
+
 class DeepSeekClient:
     def __init__(
         self,
@@ -380,8 +421,9 @@ def _urllib_transport(
     except urllib.error.HTTPError as exc:
         detail = exc.read().decode("utf-8", errors="replace")
         raise AiError(f"AI provider HTTP {exc.code}: {detail}") from exc
-    except urllib.error.URLError as exc:
-        raise AiError(f"AI provider request failed: {exc.reason}") from exc
+    except (urllib.error.URLError, TimeoutError) as exc:
+        reason = getattr(exc, "reason", str(exc))
+        raise AiError(f"AI provider request failed: {reason}") from exc
     except json.JSONDecodeError as exc:
         raise AiError("AI provider returned invalid JSON") from exc
 
@@ -413,18 +455,28 @@ def _extract_openai_text(response: dict[str, Any]) -> str:
 
 
 def _extract_deepseek_text(response: dict[str, Any]) -> str:
+    return _extract_chat_completion_text(response, provider="DeepSeek")
+
+
+def _extract_chat_completion_text(
+    response: dict[str, Any],
+    *,
+    provider: str,
+) -> str:
     choices = response.get("choices")
     if not isinstance(choices, list) or not choices:
-        raise AiError("DeepSeek returned empty response")
+        raise AiError(f"{provider} returned empty response")
     first_choice = choices[0]
     if not isinstance(first_choice, dict):
-        raise AiError("DeepSeek returned invalid response")
+        raise AiError(f"{provider} returned invalid response")
     message = first_choice.get("message")
     if not isinstance(message, dict):
-        raise AiError("DeepSeek returned invalid message")
+        raise AiError(f"{provider} returned invalid message")
     text = message.get("content")
     if not isinstance(text, str) or not text.strip():
-        raise AiError(f"DeepSeek returned empty message ({_deepseek_diagnostics(response)})")
+        if provider == "DeepSeek":
+            raise AiError(f"DeepSeek returned empty message ({_deepseek_diagnostics(response)})")
+        raise AiError(f"{provider} returned empty message")
     return _clean_ai_text(text)
 
 
